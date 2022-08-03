@@ -1,0 +1,18 @@
+Python packages
+
+# packages with specific version
+pathlib=2.3.5
+py_dss_interface=1.0.2
+pandas=1.2.4 
+matplotlib=3.3.4
+gurobipy=9.1.2 (requires licence activation - free student license)
+seaborn=0.11.1 
+
+# packages that don't require a specific version
+time
+math
+random
+os
+
+Other software:
+OpenDSS=9.3.0.2 (other version should work as well)

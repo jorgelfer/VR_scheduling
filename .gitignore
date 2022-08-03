@@ -1,0 +1,8 @@
+*.png
+*.eps
+*.pyc
+*.npy
+__pycache__/
+Methods/__pycache__/
+outputs/*
+!outputs/.gitkeep
