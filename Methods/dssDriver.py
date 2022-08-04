@@ -12,42 +12,36 @@ from Methods.plotting import plottingDispatch
 from Methods.computeSensitivityHourly import computeSensitivity
 from Methods.reactiveCorrection import reactiveCorrection 
 
-# import numba
-# from numba import jit
-# @jit(nopython=True, parallel=True)
 
 def set_baseline(dss):
-    
     dss.text("Set Maxiterations=100")
     dss.text("Set controlmode=Off") # this is for not using the default regulator
+
 
 def load_lineLimits(script_path, case):
     # Line Info
     Linfo_file = pathlib.Path(script_path).joinpath("inputs", case, "LineInfo.pkl")
     Linfo = pd.read_pickle(Linfo_file)
-
     return Linfo
+
 
 def get_nodePowers(dss, nodeNames):
     # initialize power dictionary
     nodeP = {node: 0 for node in nodeNames}
     nodeQ = {node: 0 for node in nodeNames}
     elements = dss.circuit_all_element_names()
-
+    # element iterator
     for i, elem in enumerate(elements):
         dss.circuit_set_active_element(elem)
         if "Vsource" in elem:
             # get node-based line names
             buses = dss.cktelement_read_bus_names()
             bus = buses[0]
-            
             # get this element node and discard the reference
             nodes = [i for i in dss.cktelement_node_order() if i != 0]
-            
             # reorder the number of nodes
             P = dss.cktelement_powers()[0::2]
             Q = dss.cktelement_powers()[1::2]
-            
             for n, node in enumerate(nodes):
                 nodeP[bus + f".{node}"] = abs(P[n])
                 nodeQ[bus + f".{node}"] = abs(Q[n])
@@ -55,10 +49,8 @@ def get_nodePowers(dss, nodeNames):
     # powers as array:
     Pa = np.array([nodeP[node] for node in nodeNames])
     Qa = np.array([nodeQ[node] for node in nodeNames])
-
     return Pa, Qa
 
-#driver function:
 def dssDriver(output_dir, iterName, scriptPath, case, dss, dssFile, loadNames, dfDemand, dfDemandQ, dispatchType, vmin, vmax, out=None, plot=True):
 
     dss.text(f"Compile [{dssFile}]") 

@@ -14,210 +14,174 @@ from Methods.LP_dispatch import LP_dispatch
 from Methods.plotting import plottingDispatch
 from Methods.loadHelper import loadHelper
 
+
 # Methods
 def create_output(Pg, Pdr, Pchar, Pdis, LMP, load, PTDF, lnodes, Snodes, PVnodes, timeVec, PV, storage):
     """function to create outputs"""
-    outLMP = pd.DataFrame(LMP[lnodes,:], np.asarray(PTDF.columns[lnodes]), timeVec) 
+    outLMP = pd.DataFrame(LMP[lnodes, :], np.asarray(PTDF.columns[lnodes]), timeVec)
     lnames = [load.loc[n] for n in PTDF.columns[lnodes]]
-    outDR = pd.DataFrame(Pdr[lnodes,:], np.asarray(lnames), timeVec)
-    
+    outDR = pd.DataFrame(Pdr[lnodes, :], np.asarray(lnames), timeVec)
     # check PV
     if PV:
-        outGen = pd.DataFrame(Pg[PVnodes,:], np.asarray(PTDF.columns[PVnodes]), timeVec)
+        outGen = pd.DataFrame(Pg[PVnodes, :], np.asarray(PTDF.columns[PVnodes]), timeVec)
     else:
         outGen = None
     # check storage
     if storage:
-        outPchar = pd.DataFrame(Pchar, np.asarray(PTDF.columns[Snodes]), timeVec) 
-        outPdis = pd.DataFrame(Pdis, np.asarray(PTDF.columns[Snodes]), timeVec) 
+        outPchar = pd.DataFrame(Pchar, np.asarray(PTDF.columns[Snodes]), timeVec)
+        outPdis = pd.DataFrame(Pdis, np.asarray(PTDF.columns[Snodes]), timeVec)
     else:
         outPchar = None
         outPdis = None
-
     return outGen, outDR, outPchar, outPdis, outLMP
+
 
 def create_battery(PTDF, pointsInTime, sbus, batSize):
     """function to define battery parameters"""
-
     batt = dict()
-    numBatteries= 3
+    numBatteries = 3
     batt['numBatteries'] = numBatteries
-    BatIncidence = np.zeros((len(PTDF.columns),numBatteries))
-    BatIncidence[PTDF.columns == sbus +'.1', 0] = 1
-    BatIncidence[PTDF.columns == sbus +'.2', 1] = 1
-    BatIncidence[PTDF.columns == sbus +'.3', 2] = 1
+    BatIncidence = np.zeros((len(PTDF.columns), numBatteries))
+    BatIncidence[PTDF.columns == sbus + '.1', 0] = 1
+    BatIncidence[PTDF.columns == sbus + '.2', 1] = 1
+    BatIncidence[PTDF.columns == sbus + '.3', 2] = 1
     batt['BatIncidence'] = BatIncidence
-    
-    BatSizes = batSize * np.ones((1,numBatteries))
+    BatSizes = batSize * np.ones((1, numBatteries))
     batt['BatSizes'] = BatSizes
-    
-    BatChargingLimits = (24/pointsInTime)*100*np.ones((1,numBatteries))
+    BatChargingLimits = (24/pointsInTime)*100*np.ones((1, numBatteries))
     batt['BatChargingLimits'] = BatChargingLimits
-    BatEfficiencies = 0.97*np.ones((1,numBatteries))
+    BatEfficiencies = 0.97*np.ones((1, numBatteries))
     batt['BatEfficiencies'] = BatEfficiencies
-    
-    np.random.seed(2022) # Set random seed so results are repeatable
-    BatInitEnergy = BatSizes * np.random.uniform(0.5, 0.8, size=(1,numBatteries)) 
-    
+    np.random.seed(2022)  # Set random seed so results are repeatable
+    BatInitEnergy = BatSizes*np.random.uniform(0.5, 0.8, size=(1, numBatteries))
     batt['BatInitEnergy'] = BatInitEnergy
     Pbatcost = 0.01
     batt['Pbatcost'] = Pbatcost
-    ccharbat = Pbatcost * np.ones((1,2*numBatteries*pointsInTime))
+    ccharbat = Pbatcost * np.ones((1, 2*numBatteries*pointsInTime))
     batt['ccharbat'] = ccharbat
     ccapacity = Pbatcost * np.ones((1, numBatteries*(pointsInTime + 1)))
     batt['ccapacity'] = ccapacity
-    batt['BatPenalty'] = np.ones((1,numBatteries)) 
-
+    batt['BatPenalty'] = np.ones((1, numBatteries)) 
     return batt
+
 
 def load_PTDF(script_path, case):
     '''function to load PTDF'''
-
-    PTDF_file = pathlib.Path(script_path).joinpath("inputs", case,"PTDF_jk.pkl")
+    PTDF_file = pathlib.Path(script_path).joinpath("inputs", case, "PTDF_jk.pkl")
     PTDF = pd.read_pickle(PTDF_file)
-    
     # adjust lossless PTDF
-    PTDF = PTDF / 10 # divide by perturbation injection value
-    
+    PTDF = PTDF / 10  # divide by perturbation injection value
     return PTDF
+
 
 def load_generationCosts(script_path, n, pointsInTime, freq):
     '''function to load generations costs and perform interpolation'''
-    
     GenPrice_file = pathlib.Path(script_path).joinpath("inputs", "HourlyMarginalPrice.xlsx")
     tcost = pd.read_excel(GenPrice_file)
-    gCost = 10000*np.ones((n,pointsInTime))
-    
+    gCost = 10000*np.ones((n, pointsInTime))
     # create load helper method
-    help_obj = loadHelper(initfreq = 'H', finalFreq = freq, price=True)
-    
-    cost_wednesday = pd.Series(tcost.values[225,1:-1]) # 2018-08-14
+    help_obj = loadHelper(initfreq='H', finalFreq=freq, price=True)
+    cost_wednesday = pd.Series(tcost.values[225, 1:-1])  # 2018-08-14
     # call method for processing series
     cost_wednesday = help_obj.process_pdSeries(cost_wednesday)
     cost_wednesday = np.squeeze(cost_wednesday.values)
-    
-    gCost[0,:] = cost_wednesday
-    gCost[1,:] = cost_wednesday
-    gCost[2,:] = cost_wednesday
-    
+    gCost[0, :] = cost_wednesday
+    gCost[1, :] = cost_wednesday
+    gCost[2, :] = cost_wednesday
     return gCost, cost_wednesday
+
 
 def create_PVsystems(freq, Gmax, PTDF, gCost, cost_wednesday, pointsInTime, pv1bus='634', pv2bus='680', pvSize=100):
     '''function to Define the utility scale PVs'''    
-
-    nodesPV1 = [pv1bus +'.1',pv1bus +'.2',pv1bus +'.3']
-    nodesPV2 = [pv2bus +'.1',pv2bus +'.2',pv2bus +'.3']
-
+    nodesPV1 = [pv1bus + '.1', pv1bus + '.2', pv1bus + '.3']
+    nodesPV2 = [pv2bus + '.1', pv2bus + '.2', pv2bus + '.3']
     # define the PV location
-    PV1 = np.stack([PTDF.columns == nodesPV1[0], PTDF.columns ==nodesPV1[1], PTDF.columns ==nodesPV1[2]], axis=1)
-    PV2 = np.stack([PTDF.columns ==nodesPV2[0],PTDF.columns ==nodesPV2[1],PTDF.columns ==nodesPV2[2]], axis=1)
-    PVnodes = np.any(np.concatenate([PV1,PV2],axis=1), axis=1)
-    
+    PV1 = np.stack([PTDF.columns == nodesPV1[0], PTDF.columns == nodesPV1[1], PTDF.columns == nodesPV1[2]], axis=1)
+    PV2 = np.stack([PTDF.columns == nodesPV2[0], PTDF.columns == nodesPV2[1], PTDF.columns == nodesPV2[2]], axis=1)
+    PVnodes = np.any(np.concatenate([PV1, PV2], axis=1), axis=1)
     # define the maximum output
-    Gmax[np.where(np.any(PV1,axis=1))[0]] =  pvSize        #% Utility scale Solar PV    
-    Gmax[np.where(np.any(PV2,axis=1))[0]] =  pvSize        #% Utility scale Solar PV
+    Gmax[np.where(np.any(PV1, axis=1))[0]] = pvSize  # Utility scale Solar PV
+    Gmax[np.where(np.any(PV2, axis=1))[0]] = pvSize  # Utility scale Solar PV
 
     if pv1bus == pv2bus:
-        Gmax[np.where(np.any(PV1,axis=1))[0]] =  300        #% Utility scale Solar PV
-    
+        Gmax[np.where(np.any(PV1,axis=1))[0]] =  300
     # define the cost
     gCost[PVnodes] = 0.1*cost_wednesday#*np.mean(cost_wednesday)
-    
     # create load helper method
-    help_obj = loadHelper(initfreq = 'H', finalFreq = freq)
-    
+    help_obj = loadHelper(initfreq='H', finalFreq=freq)
     # Estimate a PV Profile
     np.random.seed(2022)
-    a = np.sin(np.linspace(-4,19,24)*np.pi/15) - 0.5 + np.random.rand(24)*0.2
-    a[a<0] = 0
+    a = np.sin(np.linspace(-4, 19, 24)*np.pi/15) - 0.5 + np.random.rand(24)*0.2
+    a[a < 0] = 0
     a = a/max(a)
-    
     # call method for processing series
     PVProfile = help_obj.process_pdSeries(pd.Series(a))
-    PVProfile[PVProfile<0.01] = 0
+    PVProfile[PVProfile < 0.01] = 0
     PVProfile = np.squeeze(PVProfile.values)
-
     return Gmax, gCost, PVnodes, PVProfile
 
-def compute_penaltyFactors(batt, PTDF, source): 
+
+def compute_penaltyFactors(batt, PTDF, source):
     '''function to Compute penalty factors'''
-        
     # compute dPgref
     dPgref = np.min(PTDF[:3])
-    
     # dPl/dPgi = 1 - (- dPgref/dPgi) -> eq. L9_25
-    
-    # ITLi = dPL/dPGi 
-    ITL = 1 + dPgref # Considering a PTDF with transfer from bus i to the slack. If PTDF is calculated in the converse, then it will be 1 - dPgref
-    
-    Pf = 1 / (1- ITL)
-    
+    # ITLi = dPL/dPGi
+    ITL = 1 + dPgref  # Considering a PTDF with transfer from bus i to the slack. If PTDF is calculated in the converse, then it will be 1 - dPgref
+    Pf = 1 / (1 - ITL)
     # substation correction
     Pf[source + '.1'] = 1
     Pf[source + '.2'] = 1
     Pf[source + '.3'] = 1
     # batt incidence
-    BatIncidence = batt['BatIncidence'] 
-    
-    # nodes with batt 
-    nodes = np.where(np.any(BatIncidence,1))[0]
-    
-    # assign penalty factors 
-    batt['BatPenalty'] = np.asarray([Pf.values[n] for n in nodes])#min([Pf.values[n] for n in nodes[0]])*np.ones((1,3)) 
-
+    BatIncidence = batt['BatIncidence']
+    # nodes with batt
+    nodes = np.where(np.any(BatIncidence, 1))[0]
+    # assign penalty factors
+    batt['BatPenalty'] = np.asarray([Pf.values[n] for n in nodes])
     return batt, Pf, nodes
+
 
 def load_voltageSensitivity(script_path, case):
     '''funtion to load voltage sensitivity'''
-    
     # voltage sensitivity
     dfVS_file = pathlib.Path(script_path).joinpath("inputs", case, "VoltageSensitivity.pkl")
     dfVS = pd.read_pickle(dfVS_file)
-
     # adjust voltage sensi matrix
     dfVS = dfVS / 10 # divide by perturbation injection value
-    
     return dfVS
 
 
 def load_lineLimits(script_path, case, PTDF, pointsInTime, DR, Pij, Pjk_lim):
     '''function to load line Limits'''
-
-    compare = Pij > Pjk_lim 
+    compare = Pij > Pjk_lim
     violatingLines = compare.any(axis=1)
-    
     # Line Info
     Linfo_file = pathlib.Path(script_path).joinpath("inputs", case, "LineInfo.pkl")
     Linfo = pd.read_pickle(Linfo_file)
-
     return violatingLines, Linfo
 
+
 def compute_violatingVolts(v_0, v_base, vmin, vmax):
-
     # extract violating Lines
-    v_lb = (vmin*1000)*v_base 
+    v_lb = (vmin*1000)*v_base
     v_ub = (vmax*1000)*v_base
-
-    compare = (v_0 > v_ub) | (v_0 < v_lb) 
+    compare = (v_0 > v_ub) | (v_0 < v_lb)
     violatingVolts = compare.any(axis=1)
-    
     return violatingVolts
 
-# define the type of analysis;
 
-    
 def schedulingDriver(batSize, pvSize, output_dir, iterName, freq, script_path, case, outDSS, dispatchType, vmin, vmax, PF=True, voltage=True, DR=True, plot=False):
-    
     # define Storage and PV
     if batSize == 0:
-        storage=False
+        storage = False
     else:
-        storage=True
+        storage = True
 
     if pvSize == 0:
-        PV=False
+        PV = False
     else:
-        PV=True
+        PV = True
 
     # resource location
     if case == '123bus':
@@ -324,12 +288,6 @@ def schedulingDriver(batSize, pvSize, output_dir, iterName, freq, script_path, c
     # extract dispatch results
     Pg, Pdr, Pij, Pchar, Pdis, E = plot_obj.extractResults(x=x, DR=DR, Storage=storage, batt=batt)
 
-    ################
-    #operation costs
-    ################
-    Pdr_1d = np.reshape(Pdr, np.size(Pdr), order="F")
-    costPdr = cdr @ Pdr_1d.T
-    
     # extract LMP results
     LMP_Pg, LMP_Pdr, LMP_Pij, LMP_Pchar, LMP_Pdis, LMP_E = plot_obj.extractLMP(LMP, DR, storage, batt)
 
@@ -357,20 +315,4 @@ def schedulingDriver(batSize, pvSize, output_dir, iterName, freq, script_path, c
         ## ploting LMPs
         #plot_obj.plot_LMP(outLMP, 'gen')
         
-        # if LMP_Pdr is not None:
-        #     LMP_Pdr = pd.DataFrame(LMP_Pdr, PTDF.columns, v_0.columns)
-        #     plot_obj.plot_LMP(LMP_Pdr,'DR')
-        
-        # if LMP_Pchar is not None:
-        #     LMP_Pchar = pd.DataFrame(LMP_Pchar, PTDF.columns[Snodes], v_0.columns)
-        #     plot_obj.plot_LMP(LMP_Pchar,'Scharge')
-
-        # if LMP_Pdis is not None:
-        #     LMP_Pdis = pd.DataFrame(LMP_Pdis, PTDF.columns[Snodes], v_0.columns)
-        #     plot_obj.plot_LMP(LMP_Pdis,'Sdischarge')
-
-        # if LMP_E is not None:
-        #     LMP_E = pd.DataFrame(LMP_E, PTDF.columns[Snodes], v_0.columns)
-        #     plot_obj.plot_LMP(LMP_E,'E')
-
-    return outGen, outDR, outPchar, outPdis, outLMP, costPdr, cgn, m.objVal
+    return outGen, outDR, outPchar, outPdis, outLMP, m.objVal

@@ -6,31 +6,30 @@ Created on Mon Mar  7 17:07:32 2022
 
 """
 #########################################################################
-from SLP_LP_scheduling import SLP_LP_scheduling
+from SLP_LP_scheduling import scheduling
 import pandas as pd
 import numpy as np
 import os
 import pathlib
-import matplotlib.pyplot as plt
-plt.rcParams.update({'font.size': 20})
 import time
 import seaborn as sns
 import shutil
-from functools import reduce
+import matplotlib.pyplot as plt
+plt.rcParams.update({'font.size': 20})
 
 ext = '.png'
 dispatch = 'SLP'
-metric = np.inf# 1,2,np.inf
-plot = True 
-h = 6 
-w = 4 
+metric = np.inf  # 1,2,np.inf
+plot = True
+h = 6
+w = 4
 
 script_path = os.path.dirname(os.path.abspath(__file__))
 
 # output directory
-# time stamp 
+# time stamp
 t = time.localtime()
-timestamp = time.strftime('%b-%d-%Y_%H%M', t)  
+timestamp = time.strftime('%b-%d-%Y_%H%M', t)
 # create directory to store results
 today = time.strftime('%b-%d-%Y', t)
 directory = "Results_ncontrol_" + today
@@ -46,45 +45,29 @@ else:
     shutil.rmtree(output_dir13)
     os.mkdir(output_dir13)
     
+# define traverse parameters
 batSizes = [0]
 pvSizes = [0]
-loadMults = [1] #1 for default loadshape, 11 for real.
+loadMults = [1]  # 1 for default loadshape, 11 for real.
 
 # voltage limits
 vmin = 0.95
 vmax = 1.06
 
+# prelocate
 opcost = np.zeros((len(batSizes), len(pvSizes)))
 mopcost = np.zeros((len(batSizes),len(pvSizes)))
 
-for lm, loadMult in enumerate(loadMults): 
-    for ba, batSize in enumerate(batSizes): 
+# main loop
+for lm, loadMult in enumerate(loadMults):
+    for ba, batSize in enumerate(batSizes):
         for pv, pvSize in enumerate(pvSizes):
-            
-            print(f"bat_{ba}_pv_{pv}_lm_{lm}")
-            output_dir1 = pathlib.Path(output_dir13).joinpath(f"bat_{ba}_pv_{pv}_lm_{lm}")
+            outDir = f"bat_{ba}_pv_{pv}_lm_{lm}"
+            print(outDir)
+            output_dir1 = pathlib.Path(output_dir13).joinpath(outDir)
             if not os.path.isdir(output_dir1):
                 os.mkdir(output_dir1)
-                
             ####################################
-            # First thing: compute the initial Dispatch
+            # 1: compute scheduling
             ####################################
-            demandProfile, LMP, OperationCost, mOperationCost = SLP_LP_scheduling(loadMult, batSize, pvSize, output_dir1, vmin, vmax, userDemand=None, plot=plot, freq="30min", dispatchType=dispatch)
-            opcost[ba, pv] = OperationCost
-            mopcost[ba, pv] = mOperationCost
-
-plt.clf()
-fig, axis = plt.subplots(figsize=(h,w))
-sns.heatmap(opcost)
-plt.tight_layout()
-img_path = pathlib.Path(output_dir13).joinpath('heatmap' + ext)
-plt.savefig(img_path)
-plt.close('all')
-            
-plt.clf()
-fig, axis = plt.subplots(figsize=(h,w))
-sns.heatmap(mopcost)
-plt.tight_layout()
-img_path = pathlib.Path(output_dir13).joinpath('mheatmap' + ext)
-plt.savefig(img_path)
-plt.close('all')
+            demandProfile, LMP, mOperationCost = scheduling(loadMult, batSize, pvSize, output_dir1, vmin, vmax, userDemand=None, plot=plot, freq="30min", dispatchType=dispatch)

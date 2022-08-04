@@ -13,8 +13,20 @@ class sensitivityPy:
     def __init__(self, dss, time):
         self.dss = dss
         self.time = time
-        
+
     # Methods
+    def perturbRegDSS(self, trafo, newtap):
+        # write trafo as main element
+        self.dss.transformers_write_name(trafo)
+        # set the second winding active
+        self.dss.transformers_write_wdg(2)
+        # debug
+        readprevtap = self.dss.transformers_read_tap()  # debug
+        # make the tap modification
+        self.dss.text(f"Transformer.{trafo}.Taps=[1.0, {newtap}]")
+        # debug
+        readnewtap = self.dss.transformers_read_tap()  # debug
+
     def perturbDSS(self, node, kv, kw, P):
         genName = node.replace(".","_")
         if P:
@@ -52,32 +64,26 @@ class sensitivityPy:
         if Pchar is not None:
             self.__createLoad(Pchar)
 
-    def voltageProfile(self):
-        
-        # debug
+    def voltageMags(self):
         # get all node magnitudes
-        # voltages = self.dss.circuit_all_bus_vmag()
-        # nodeNames = self.dss.circuit_all_node_names()
-        
+        volts = self.dss.circuit_all_bus_vmag()
+        return np.asarray(volts)
+
+    def voltageProfile(self):
         # values
         volts = self.dss.circuit_all_bus_volts()
-                
         vReal = volts[0::2]
         vImaginary = volts[1::2]
-                
         vphasor = np.asarray(vReal) + 1j*np.asarray(vImaginary)
         vphasor_mag = abs(vphasor)
-        
         return np.asarray(vphasor_mag), np.asarray(vphasor)
     
     def flows(self, lname):
-          
         # get line flows
         lines, lines_KW_power, lines_KVAR_power = self.__getLinePowers()
         
         # organize line flows for node-based analysis
         Pjk, Qjk, pjk, qjk = self.__organizeFlows(lines, lines_KW_power, lines_KVAR_power, lname)
-
         return Pjk, Qjk, pjk, qjk
 
     def get_nodeBaseVolts(self):
@@ -148,17 +154,15 @@ class sensitivityPy:
         return Pg, Pdr, Pchar, Pdis 
     
     def __organizeFlows(self, lines, lines_KW_power, lines_KVAR_power, lname):
-
-        Pjk = np.zeros([len(lname)]) # containing flows Pkm
-        Pkj = np.zeros([len(lname)]) # containing flows Pmk
-
-        Qjk = np.zeros([len(lname)]) # containing flows Pkm
-        Qkj = np.zeros([len(lname)]) # containing flows Pmk
-        
+        # active flows
+        Pjk = np.zeros([len(lname)])  # containing flows Pkm
+        Pkj = np.zeros([len(lname)])  # containing flows Pmk
+        # reactive flows
+        Qjk = np.zeros([len(lname)])  # containing flows Pkm
+        Qkj = np.zeros([len(lname)])  # containing flows Pmk
         # aggregated per line
-        pjk = np.zeros([len(lines)]) # containing flows Pkm
-        qjk = np.zeros([len(lines)]) # containing flows Pkm
-
+        pjk = np.zeros([len(lines)])  # containing flows Pkm
+        qjk = np.zeros([len(lines)])  # containing flows Pkm
         cont = 0
         for l, line in enumerate(lines):
 
@@ -171,7 +175,7 @@ class sensitivityPy:
             Qjk[cont: cont + int(len(p)/2)] = q[:int(len(p)/2)]
             Qkj[cont: cont + int(len(p)/2)] = q[int(len(p)/2):]
 
-            # total line flow 
+            # total line flow
             pjk[l] = sum(p[:int(len(p)/2)])
             qjk[l] = sum(q[:int(len(p)/2)])
 
@@ -180,14 +184,12 @@ class sensitivityPy:
         return Pjk, Qjk, pjk, qjk
 
     def __getLinePowers(self):
-
         # prelocate 
         lines = list()
         lines_KW_dict = dict()
         lines_KVAR_dict = dict()
-    
+        # dss elements
         elements = self.dss.circuit_all_element_names()
-    
         for i, elem in enumerate(elements):
             self.dss.circuit_set_active_element(elem)
             if "Line" in elem:
@@ -197,7 +199,6 @@ class sensitivityPy:
 
             elif "Transformer" in elem:
                 lines.append(elem)
-                
                 if elem == 'Transformer.xfm1':
                     lines_KW_dict[elem] = self.dss.cktelement_powers()[0::2]
                     lines_KVAR_dict[elem] = self.dss.cktelement_powers()[1::2]
@@ -208,7 +209,6 @@ class sensitivityPy:
                 else: 
                     lines_KW_dict[elem] = [i for i in self.dss.cktelement_powers()[0::2] if i != 0]
                     lines_KVAR_dict[elem] = [i for i in self.dss.cktelement_powers()[1::2] if i != 0]
-
         return lines, lines_KW_dict, lines_KVAR_dict
 
     def __modifyAllLoads(self, Pdr):
@@ -268,6 +268,7 @@ class sensitivityPy:
                 genName = node.replace(".","_")
                 self.__new_1ph_gen(genName, node, gen_kvs[node], Pg.loc[node, self.time], kvar=0)
         
+
     def __new_1ph_gen(self, gen, node, kv, kw, kvar):
         self.dss.text(f"new generator.{gen} "
                       f"phases=1 "

@@ -221,6 +221,5 @@ Set VoltageBases = [4.16, 0.48]    ! ARRAY OF VOLTAGES IN KV
 CalcVoltageBases  ! PERFORMS ZERO LOAD POWER FLOW TO ESTIMATE VOLTAGE BASES
 
 Set controlmode=Off
-
-Solve
+!Solve
 Buscoords Buscoords.dat   ! load in bus coordinates
