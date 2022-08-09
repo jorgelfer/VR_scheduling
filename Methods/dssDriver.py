@@ -29,98 +29,79 @@ def get_nodePowers(dss, nodeNames):
     # initialize power dictionary
     nodeP = {node: 0 for node in nodeNames}
     nodeQ = {node: 0 for node in nodeNames}
-    elements = dss.circuit_all_element_names()
-    # element iterator
-    for i, elem in enumerate(elements):
-        dss.circuit_set_active_element(elem)
-        if "Vsource" in elem:
-            # get node-based line names
-            buses = dss.cktelement_read_bus_names()
-            bus = buses[0]
-            # get this element node and discard the reference
-            nodes = [i for i in dss.cktelement_node_order() if i != 0]
-            # reorder the number of nodes
-            P = dss.cktelement_powers()[0::2]
-            Q = dss.cktelement_powers()[1::2]
-            for n, node in enumerate(nodes):
-                nodeP[bus + f".{node}"] = abs(P[n])
-                nodeQ[bus + f".{node}"] = abs(Q[n])
-                
+    # get source powers
+    dss.circuit_set_active_element("Vsource.source")
+    # get node-based line names
+    buses = dss.cktelement_read_bus_names()
+    bus = buses[0]
+    # get this element node and discard the reference
+    nodes = [i for i in dss.cktelement_node_order() if i != 0]
+    # reorder the number of nodes
+    P = dss.cktelement_powers()[0::2]
+    Q = dss.cktelement_powers()[1::2]
+    for n, node in enumerate(nodes):
+        nodeP[bus + f".{node}"] = abs(P[n])
+        nodeQ[bus + f".{node}"] = abs(Q[n])
     # powers as array:
     Pa = np.array([nodeP[node] for node in nodeNames])
     Qa = np.array([nodeQ[node] for node in nodeNames])
     return Pa, Qa
 
-def dssDriver(output_dir, iterName, scriptPath, case, dss, dssFile, loadNames, dfDemand, dfDemandQ, dispatchType, vmin, vmax, out=None, plot=True):
 
-    dss.text(f"Compile [{dssFile}]") 
+def dssDriver(iterName, dss, outDSS, initParams, outES=None):
+
+    # preprocess from initialization
+    dssFile = initParams["dssFile"]
+    case = initParams["case"]
+    scriptPath = initParams["script_path"]
+    output_dir = initParams["output_dir"]
+    # from init load
+    dfDemand = outDSS["dfDemand"]
+    dfDemandQ = outDSS["dfDemandQ"]
+    loadNames = outDSS["loadNames"]
+
+    dss.text(f"Compile [{dssFile}]")
     set_baseline(dss)
-
     # create a sensitivity object
     sen_obj_0 = sensitivityPy(dss, time=0)
-    
-    # get all node-based base volts 
+    # get all node-based base volts
     nodeBaseVoltage = sen_obj_0.get_nodeBaseVolts()
-
-    # get all node-based buses, 
+    # get all node-based buses,
     nodeNames = dss.circuit_all_node_names()
-
     # get all node-based lines names
     nodeLineNames, lines = sen_obj_0.get_nodeLineNames()
-
     # points in time
     pointsInTime = len(dfDemand.columns)
-    
     # prelocation
-    v = np.zeros([len(nodeNames), pointsInTime]) # initial voltages
-    vp = np.zeros([len(nodeNames), pointsInTime], dtype=complex) # initial voltages
-    p = np.zeros([len(nodeNames), pointsInTime]) # initial voltages
-    q = np.zeros([len(nodeNames), pointsInTime]) # initial voltages
-    Pjk = np.zeros([len(nodeLineNames), pointsInTime]) # initial voltages
-    Qjk = np.zeros([len(nodeLineNames), pointsInTime]) # initial voltages
-    
-    pjk = np.zeros([len(lines), pointsInTime]) # full line flow 
-    qjk = np.zeros([len(lines), pointsInTime]) # full line flow 
-
-    # prelocate 
-    dvdp_list = list()
-    dvdq_list = list()
+    v = np.zeros([len(nodeNames), pointsInTime])
+    vp = np.zeros([len(nodeNames), pointsInTime], dtype=complex)
+    p = np.zeros([len(nodeNames), pointsInTime])
+    q = np.zeros([len(nodeNames), pointsInTime])
+    Pjk = np.zeros([len(nodeLineNames), pointsInTime])
+    Qjk = np.zeros([len(nodeLineNames), pointsInTime])
+    pjk = np.zeros([len(lines), pointsInTime])  # full line flow
+    qjk = np.zeros([len(lines), pointsInTime])  # full line flow
 
     # main loop for each load mult
     for t, time in enumerate(dfDemand.columns):
         # fresh compilation to remove previous modifications
-        dss.text(f"Compile [{dssFile}]") 
+        dss.text(f"Compile [{dssFile}]")
         set_baseline(dss)
-        
-        #create a sensitivity object
+        # create a sensitivity object
         sen_obj = sensitivityPy(dss, time=time)
-        
         # set all loads
-        sen_obj.setLoads(dfDemand.loc[:,time], dfDemandQ.loc[:,time], loadNames)
-        
-        if out is not None:
-            sen_obj.modifyDSS(out, nodeBaseVoltage)
-        
+        sen_obj.setLoads(dfDemand.loc[:, time], dfDemandQ.loc[:, time], loadNames)
+        if outES is not None:
+            sen_obj.modifyDSS(outES, nodeBaseVoltage)
         dss.text("solve")
-        
         # extract power
-        p[:,t], q[:,t] = get_nodePowers(dss, nodeNames)
-
+        p[:, t], q[:, t] = get_nodePowers(dss, nodeNames)
         # extract voltages
-        v[:,t], vp[:,t] = sen_obj.voltageProfile()
-        
-        # compute sensitivity
-        # dvdp, dvdq = computeSensitivity(scriptPath, case, dss, plot=False, ite=t)
-        # dvdp_list.append(dvdp)
-        # dvdq_list.append(dvdq)
-        
-        # extract line flows 
-        Pjk[:,t], Qjk[:,t], pjk[:,t], qjk[:,t] = sen_obj.flows(nodeLineNames)
+        v[:, t], vp[:, t] = sen_obj.voltageProfile()
+        # extract line flows
+        Pjk[:, t], Qjk[:, t], pjk[:, t], qjk[:, t] = sen_obj.flows(nodeLineNames)
 
     # define outputs
-    # dvdp_c = pd.concat(dvdp_list, axis=0)    
-    # dvdq_c = pd.concat(dvdq_list, axis=0)
-    
     dfV = pd.DataFrame(v, index=np.asarray(nodeNames), columns=dfDemand.columns)
     dfVp = pd.DataFrame(vp, index=np.asarray(nodeNames), columns=dfDemand.columns)
     dfP = pd.DataFrame(p, np.asarray(nodeNames), columns=dfDemand.columns)
@@ -132,20 +113,22 @@ def dssDriver(output_dir, iterName, scriptPath, case, dss, dssFile, loadNames, d
     dfqjk = pd.DataFrame(qjk, index=np.asarray(lines), columns=dfDemand.columns)
 
     # reactive power correction
-    Q_obj = reactiveCorrection(dss, output_dir, iterName) 
-    dfPjk_lim, dfSjk_lim = Q_obj.compute_correction(dfVp, nodeBaseVoltage, nodeLineNames, dfpjk, dfqjk)
+    Q_obj = reactiveCorrection(dss, output_dir, iterName)
+    Pjklim, Sjklim = Q_obj.compute_correction(dfVp, nodeBaseVoltage, nodeLineNames, dfpjk, dfqjk)
 
-    if plot:
-        #plot results
-        plot_obj = plottingDispatch(output_dir, iterName, pointsInTime, scriptPath, vmin, vmax, dispatchType=dispatchType)
-        
-        #plot Line Limits\
-        Linfo = load_lineLimits(scriptPath, case) 
-        plot_obj.plot_Pjk(dfPjks, Linfo, dfPjk_lim, dfSjk_lim)
-    
-        #plot voltage constraints 
+    outDSS['initPower'] = dfP
+    outDSS['initVolts'] = dfV
+    outDSS['initPjks'] = dfPjks
+    outDSS['limPjks'] = Pjklim
+    outDSS['nodeBaseVolts'] = nodeBaseVoltage
+
+    if initParams["plot"] == "True":
+        # plot results
+        plot_obj = plottingDispatch(iterName, pointsInTime, initParams)
+        # plot Line Limits
+        Linfo = load_lineLimits(scriptPath, case)
+        plot_obj.plot_Pjk(dfPjks, Linfo, Pjklim, Sjklim)
+        # plot voltage constraints
         plot_obj.plot_voltage(nodeBaseVoltage, dfV, dfDemand.any(axis=1))
 
-    return dfP, dfV, dfPjks, nodeBaseVoltage, dfPjk_lim
-
-
+    return outDSS

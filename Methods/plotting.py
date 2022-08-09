@@ -11,76 +11,56 @@ h = 6
 w = 4 
 ext = '.png'
 
+
 class plottingDispatch:
 
-    def __init__(self, output_dir,  niter, PointsInTime, script_path, vmin, vmax, PTDF=None, Ain=None, title=False, dispatchType='LP'):
-        
-        if Ain is not None:
-            self.Ain = Ain
-            
+    def __init__(self, niter, PointsInTime, initParams, PTDF=None):
         # preprocessing
         if PTDF is not None:
             self.PTDF = PTDF
-            self.n = len(self.PTDF.columns) #number of nodes
-            if dispatchType == 'LP':
-                self.l = len(self.PTDF)         #number of lines
+            self.n = len(self.PTDF.columns)  # number of nodes
+            if initParams["dispatchType"] == 'LP':
+                self.m = len(self.PTDF)  # number of lines
                 self.jk = True
             else:
                 self.jk = False
-                self.l=0
+                self.m = 0
 
-        self.title = title
-
-        self.niter = niter 
-        
+        # define if include title
+        self.title = True
+        # name of stage iteration
+        self.niter = niter
         self.PointsInTime = PointsInTime
-        self.vmin = vmin
-        self.vmax = vmax
-
-        # time stamp 
+        self.vmin = float(initParams["vmin"])
+        self.vmax = float(initParams["vmax"])
+        # time stamp
         t = time.localtime()
-        self.timestamp = time.strftime('%b-%d-%Y_%H%M%S', t)           
-        
+        self.timestamp = time.strftime('%b-%d-%Y_%H%M%S', t)
         # create directory to store results
-        self.output_dir = output_dir
-        
-    def plot_voltage(self, vBase, initVolts, indexDemand, comp=False, x=None):
-        
+        self.output_dir = initParams["output_dir"]
+
+    def plot_voltage(self, vBase, v, indexDemand):
+        # preprocess
         if len(vBase.shape) == 1:
-            vBase = np.kron(np.expand_dims(vBase,1), np.ones((1, self.PointsInTime)))
-        
-        if comp:
-            dvoltages = self.Ain @ x.X
-            
-            dvolts = dvoltages[:np.size(dvoltages) // 2]
-            
-            dv    = np.reshape(dvolts[:self.n*self.PointsInTime], (self.PointsInTime,self.n), order='F').T
-            
-            v = initVolts - dv
-            
-        else:
-            v = initVolts
-        
+            vBase = np.kron(np.expand_dims(vBase, 1), np.ones((1, self.PointsInTime)))
         # compute the per unit value of the voltage
-        vpu = v[indexDemand.values] / (1000*vBase[indexDemand.values])
-        
+        vpu = v[indexDemand.values] / (1000 * vBase[indexDemand.values])
         # create a dataframe for limits
-        limits = np.concatenate([self.vmin*np.ones((1, self.PointsInTime)), self.vmax*np.ones((1, self.PointsInTime))], axis = 0)
-        dfLimits = pd.DataFrame(limits, index = ['lower limit', 'upper limit'], columns = vpu.columns)
-        
+        limits = np.concatenate([self.vmin * np.ones((1, self.PointsInTime)),
+                                 self.vmax * np.ones((1, self.PointsInTime))], axis=0)
+        dfLimits = pd.DataFrame(limits, index=['lower limit', 'upper limit'], columns=vpu.columns)
+        # figure
         plt.clf()
-        fig, ax = plt.subplots(figsize=(h,w)) 
-        
+        fig, ax = plt.subplots(figsize=(h, w))
         # concatenate dataframes
         concatenated = pd.concat([vpu, dfLimits])
         concatenated.T.plot(legend=False)
+        fig.tight_layout()
 
         if self.title:
-            ax.set_title('Volts')
-            plt.ylabel('Volts[pu]')
+            ax.set_title(f'Voltages_{self.niter}')
+            plt.ylabel('volts (pu)')
             plt.xlabel('Time (hrs)')
-                
-        fig.tight_layout()
 
         # create voltage directory to store results
         output_dirV = pathlib.Path(self.output_dir).joinpath("voltage")
@@ -94,15 +74,14 @@ class plottingDispatch:
         # save as pickle as well
         output_pkl = pathlib.Path(output_dirV).joinpath(f"voltage_{self.niter}_{self.timestamp}.pkl")
         concatenated.to_pickle(output_pkl)
-        
-    def plot_PTDF(self):
 
+    def plot_PTDF(self):
         ###########
-        ## PTDF  ##
+        # PTDF
         ###########
         plt.clf()
-        fig, ax = plt.subplots(figsize=(h,w))
-        sns.heatmap(self.PTDF,annot=False)
+        fig, ax = plt.subplots(figsize=(h, w))
+        sns.heatmap(self.PTDF, annot=False)
         fig.tight_layout()
         output_img = pathlib.Path(self.output_dir).joinpath(f"PTDF_{self.timestamp}" + ext)
         plt.savefig(output_img)
@@ -111,29 +90,25 @@ class plottingDispatch:
     def plot_Pjk(self, Pij, Linfo, lmax, smax):
 
         #######################
-        ## Power in lines    ##
+        # Power in lines
         #######################
-        
-        nil = Linfo['NumNodes'].values # nodes in lines (nil)
-        namel = Linfo['Line_Name'].values # name of lines (namel)
-        
+        nil = Linfo['NumNodes'].values  # nodes in lines (nil)
+        namel = Linfo['Line_Name'].values  # name of lines (namel)
         if not isinstance(lmax, pd.DataFrame):
-            lmax   = np.reshape(lmax, (len(Pij.columns), len(Pij)), order='F').T
+            lmax = np.reshape(lmax, (len(Pij.columns), len(Pij)), order='F').T
             lmax = pd.DataFrame(lmax, Pij.index, Pij.columns)
-        
         # for each line - Main cycle
         cont = 0
         for ni, na in zip(nil, namel):
-            
             # if True:
-            # if np.any(Pij.values[cont:cont + ni,:] > lmax.values[cont:cont + ni,:]):
-            # if na == "Line.l3" or na == "Line.l7" or na == "Line.l10":
-            if na == "Line.650632":
+            if np.any(Pij.values[cont:cont + ni, :] > lmax.values[cont:cont + ni, :]):
+                # if na == "Line.l3" or na == "Line.l7" or na == "Line.l10":
+                # if na == "Line.650632":
                 plt.clf()
-                fig, ax = plt.subplots(figsize=(h,w))                
+                fig, ax = plt.subplots(figsize=(h, w))
                 # leg = [node for node in Pij.index[cont:cont + ni]]
-                lim = lmax[cont:cont + ni].mean(axis = 0).to_frame()
-                sLim = smax[cont:cont + ni].mean(axis = 0).to_frame()
+                lim = lmax[cont:cont + ni].mean(axis=0).to_frame()
+                sLim = smax[cont:cont + ni].mean(axis=0).to_frame()
                 lim.columns = ['Pjk']
                 sLim.columns = ['Sjk']
                 concatenated = pd.concat([Pij[cont:cont + ni], lim.T, sLim.T])
@@ -305,41 +280,46 @@ class plottingDispatch:
             output_img = pathlib.Path(LMPdir).joinpath(f"LMP_{i}_{LMPvar}_{self.niter}_{self.timestamp}"+ ext)
             plt.savefig(output_img)
             plt.close('all')
-    
 
-    def extractLMP(self, LMP, DR, Storage, batt):
-        
+    def extractLMP(self, LMP, flags, batt):
         n = self.n
-        m = self.l 
+        m = self.m
         PointsInTime = self.PointsInTime
         numBatteries = batt['numBatteries']
         LMP = np.squeeze(LMP)
-        
         # Extract solution
-        if DR and not Storage:
-            LMP_Pg    = np.reshape(LMP[:n*PointsInTime], (PointsInTime,n), order='F').T
-            LMP_Pdr   = np.reshape(LMP[n*PointsInTime:2*n*PointsInTime], (PointsInTime,n), order='F').T;
+        if flags["DR"] and not flags["storage"]:
+            LMP_Pg = np.reshape(LMP[:n * PointsInTime],
+                                (PointsInTime, n), order='F').T
+            LMP_Pdr = np.reshape(LMP[n * PointsInTime:2 * n * PointsInTime],
+                                 (PointsInTime, n), order='F').T
             if self.jk:
-                LMP_Pij   = np.reshape(LMP[2*n*PointsInTime:(2*n+m)*PointsInTime], (PointsInTime, m), order='F').T
+                LMP_Pij = np.reshape(LMP[2 * n * PointsInTime:(2 * n + m) * PointsInTime],
+                                     (PointsInTime, m), order='F').T
             else:
                 LMP_Pij = None
-                                
             LMP_Pchar = None
-            LMP_Pdis  = None
-            LMP_E     = None
+            LMP_Pdis = None
+            LMP_E = None
 
-        elif DR and Storage:
-            LMP_Pg    = np.reshape(LMP[:n*PointsInTime], (PointsInTime,n), order='F').T
-            LMP_Pdr   = np.reshape(LMP[n*PointsInTime:2*n*PointsInTime], (PointsInTime,n), order='F').T;
+        elif flags["DR"] and flags["storage"]:
+            LMP_Pg = np.reshape(LMP[:n * PointsInTime],
+                                (PointsInTime, n), order='F').T
+            LMP_Pdr = np.reshape(LMP[n * PointsInTime:2 * n * PointsInTime],
+                                 (PointsInTime, n), order='F').T
             if self.jk:
-                LMP_Pij   = np.reshape(LMP[2*n*PointsInTime:(2*n+m)*PointsInTime], (PointsInTime, m), order='F').T
+                LMP_Pij = np.reshape(LMP[2 * n * PointsInTime:(2 * n + m) * PointsInTime],
+                                     (PointsInTime, m), order='F').T
             else:
                 LMP_Pij = None
-            LMP_Pchar = np.reshape(LMP[(2*n+m)*PointsInTime:(2*n+m)*PointsInTime + numBatteries*PointsInTime] , (PointsInTime,numBatteries), order='F').T
-            LMP_Pdis  = np.reshape(LMP[(2*n+m+numBatteries)*PointsInTime:(2*n+m+2*numBatteries)*PointsInTime], (PointsInTime,numBatteries), order='F').T
-            LMP_E     = np.reshape(LMP[(2*n+m+2*numBatteries)*PointsInTime:-numBatteries], (PointsInTime,numBatteries), order='F').T
+            LMP_Pchar = np.reshape(LMP[(2 * n + m) * PointsInTime:(2 * n + m) * PointsInTime + numBatteries * PointsInTime],
+                                   (PointsInTime, numBatteries), order='F').T
+            LMP_Pdis = np.reshape(LMP[(2 * n + m + numBatteries) * PointsInTime:(2 * n + m + 2 * numBatteries) * PointsInTime],
+                                  (PointsInTime, numBatteries), order='F').T
+            LMP_E = np.reshape(LMP[(2 * n + m + 2 * numBatteries) * PointsInTime:-numBatteries],
+                               (PointsInTime, numBatteries), order='F').T
                 
-        elif Storage and not DR:
+        elif flags["storage"] and not flags["DR"]:
             LMP_Pg    = np.reshape(LMP[:n*PointsInTime], (PointsInTime,n), order='F').T
             LMP_Pdr   = None
             if self.jk:
@@ -362,26 +342,25 @@ class plottingDispatch:
 
         return LMP_Pg, LMP_Pdr, LMP_Pij, LMP_Pchar, LMP_Pdis, LMP_E
 
-    def extractResults(self, x, DR, Storage, batt):
-        
+    def extractResults(self, x, flags, batt):
         n = self.n
-        m = self.l 
+        m = self.m
         PointsInTime = self.PointsInTime
         numBatteries = batt['numBatteries']
-        
         # Extract solution
-        if DR and not Storage:
-            Pg    = np.reshape(x.X[:n*PointsInTime], (PointsInTime,n), order='F').T
-            Pdr   = np.reshape(x.X[n*PointsInTime:2*n*PointsInTime], (PointsInTime,n), order='F').T;
+        if flags["DR"] and not flags["storage"]:
+            Pg = np.reshape(x.X[:n*PointsInTime], (PointsInTime,n), order='F').T
+            Pdr = np.reshape(x.X[n*PointsInTime:2*n*PointsInTime], (PointsInTime, n), order='F').T
+            R = np.reshape(x.X[2*n*PointsInTime:], (PointsInTime, 7), order='F').T
             if self.jk:
                 Pij   = np.reshape(x.X[2*n*PointsInTime:(2*n+m)*PointsInTime], (PointsInTime, m), order='F').T
             else:
                 Pij = 0
             Pchar = 0
-            Pdis  = 0
-            E     = 0
+            Pdis = 0
+            E = 0
             
-        elif DR and Storage:
+        elif flags["DR"] and flags["storage"]:
             Pg    = np.reshape(x.X[:n*PointsInTime], (PointsInTime,n), order='F').T
             Pdr   = np.reshape(x.X[n*PointsInTime:2*n*PointsInTime], (PointsInTime,n), order='F').T;
             if self.jk:
@@ -389,10 +368,10 @@ class plottingDispatch:
             else:
                 Pij = 0
             Pchar = np.reshape(x.X[(2*n+m)*PointsInTime:(2*n+m)*PointsInTime + numBatteries*PointsInTime] , (PointsInTime,numBatteries), order='F').T
-            Pdis  = np.reshape(x.X[(2*n+m+numBatteries)*PointsInTime:(2*n+m+2*numBatteries)*PointsInTime], (PointsInTime,numBatteries), order='F').T
-            E     = np.reshape(x.X[(2*n+m+2*numBatteries)*PointsInTime:-numBatteries], (PointsInTime,numBatteries), order='F').T
+            Pdis = np.reshape(x.X[(2*n+m+numBatteries)*PointsInTime:(2*n+m+2*numBatteries)*PointsInTime], (PointsInTime,numBatteries), order='F').T
+            E = np.reshape(x.X[(2*n+m+2*numBatteries)*PointsInTime:-numBatteries], (PointsInTime,numBatteries), order='F').T
                 
-        elif Storage and not DR:
+        elif flags["storage"] and not flags["DR"]:
             Pg    = np.reshape(x.X[:n*PointsInTime], (PointsInTime,n), order='F').T
             Pdr   = 0
             if self.jk:
@@ -403,14 +382,15 @@ class plottingDispatch:
             Pdis  = np.reshape(x.X[(n+m+numBatteries)*PointsInTime:(n+m+2*numBatteries)*PointsInTime], (PointsInTime,numBatteries), order='F').T
             E     = np.reshape(x.X[(n+m+2*numBatteries)*PointsInTime:-numBatteries], (PointsInTime,numBatteries), order='F').T
         else:
-            Pg    = np.reshape(x.X[:n*PointsInTime], (PointsInTime,n), order='F').T
-            Pdr   = 0
+            Pg = np.reshape(x.X[:n*PointsInTime], (PointsInTime,n), order='F').T
+            Pdr = 0
+            R = np.reshape(x.X[n*PointsInTime:], (PointsInTime, 7), order='F').T
             if self.jk:
-                Pij   = np.reshape(x.X[n*PointsInTime:(n+m)*PointsInTime], (PointsInTime, m), order='F').T
+                Pij = np.reshape(x.X[n*PointsInTime:(n+m)*PointsInTime], (PointsInTime, m), order='F').T
             else:
                 Pij = 0
             Pchar = 0
             Pdis  = 0
             E     = 0
 
-        return Pg, Pdr, Pij, Pchar, Pdis, E 
+        return Pg, Pdr, Pij, Pchar, Pdis, E, R 

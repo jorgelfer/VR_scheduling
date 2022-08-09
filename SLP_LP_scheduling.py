@@ -6,9 +6,8 @@ Created on Thu Dec 30 16:22:51 2021
 """
 # required for processing
 import pathlib
-import os
 import py_dss_interface
-import numpy as np
+
 from Methods.dssDriver import dssDriver
 from Methods.schedulingDriver import schedulingDriver
 from Methods.initDemandProfile import getInitDemand 
@@ -18,60 +17,34 @@ import matplotlib.pyplot as plt
 plt.rcParams.update({'font.size': 20})
 
 
-def save_initDSS(script_path, Pg_0, v_0, Pjk_0, v_base, Pjk_lim, loadNames, initDemand, initDemandQ):
-    # save initial DSS values
-    outDSS = dict()
-    outDSS['initPower'] = Pg_0
-    outDSS['initVolts'] = v_0
-    outDSS['initPjks'] = Pjk_0
-    outDSS['limPjks'] = Pjk_lim
-    outDSS['nodeBaseVolts'] = v_base
-    outDSS['loadNames'] = loadNames
-    outDSS['initDemand'] = initDemand
-    outDSS['initDemandQ'] = initDemandQ
-    return outDSS
+def scheduling(initParams):
 
+    # preprocess
+    script_path = initParams["script_path"]
+    case = initParams["case"]
+    file = initParams["dssFile"]
 
-def save_ES(script_path, outGen, outDR, outPsc, outPsd):
-    # save optimization values
-    outES = dict()
-    outES['Gen'] = outGen
-    outES['DR'] = outDR
-    outES['Pchar'] = outPsc
-    outES['Pdis'] = outPsd
-    return outES
-
-
-def scheduling(loadMult, batSize, pvSize, output_dir, vmin, vmax, userDemand=None, plot=False, freq="15min", dispatchType='SLP'):
-
-    # initialization
-    case = '123bus'  # 123bus
-    # "IEEE123Master.dss"'IEEE13Nodeckt.dss'
-    file = "IEEE123Master.dss"
     # execute the DSS model
-    script_path = os.path.dirname(os.path.abspath(__file__))
     dss_file = pathlib.Path(script_path).joinpath("EV_data", case, file)
     dss = py_dss_interface.DSSDLL()
     dss.text(f"Compile [{dss_file}]")
+
     # compute sensitivities for the test case
-    compute = True
+    compute = False
     if compute:
-        computeSensitivity(script_path, case, dss, dss_file, plot)
-        computeRegSensitivity(script_path, case, dss, dss_file, plot)
+        computeSensitivity(dss, initParams)
+        computeRegSensitivity(dss, initParams)
+
     # get init load
-    loadNames, dfDemand, dfDemandQ = getInitDemand(script_path, dss, freq, loadMult)
-    # correct native load by user demand
-    if userDemand is not None:
-        dfDemand.loc[loadNames.index, :] = userDemand
+    outDSS = getInitDemand(dss, initParams)
+
     # Dss driver function
-    Pg_0, v_0, Pjk_0, v_base, Pjk_lim = dssDriver(output_dir, 'InitDSS', script_path, case, dss, dss_file, loadNames, dfDemand, dfDemandQ, dispatchType, vmin, vmax, plot=plot)
-    outDSS = save_initDSS(script_path, Pg_0, v_0, Pjk_0, v_base, Pjk_lim, loadNames, dfDemand, dfDemandQ)
+    outDSS = dssDriver('InitDSS', dss, outDSS, initParams)
+
     # Energy scheduling driver function
-    outGen, outDR, outPchar, outPdis, outLMP, mobj = schedulingDriver(batSize, pvSize, output_dir, 'Dispatch', freq, script_path, case, outDSS, dispatchType, vmin, vmax, plot=plot)
-    outES = save_ES(script_path, outGen, outDR, outPchar, outPdis)
-    # normalization
-    loadNames = outDSS['loadNames']
-    dfDemand = outDSS['initDemand']
+    outES = schedulingDriver('Dispatch', outDSS, initParams)
+
     # corrected dss driver function
-    Pg, v, Pjk, v_base, Pjk_lim = dssDriver(output_dir, 'FinalDSS', script_path, case, dss, dss_file, loadNames, dfDemand, dfDemandQ, dispatchType, vmin, vmax, out=outES, plot=plot)
-    return dfDemand.loc[loadNames.index, :], outLMP, mobj
+    outDSS = dssDriver('FinalDSS', dss, outDSS, initParams, outES=outES)
+
+    return outES, outDSS

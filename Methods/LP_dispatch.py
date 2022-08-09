@@ -184,20 +184,20 @@ class LP_dispatch:
         # Compute the demand portion of the PTDF-OPF definition:
         # i.e. Pjk*(-PTDF) = -PTDF * Pd (the right hand side is the demand portion)
         DPTDF = - self.PTDF @ demandProfile
-        DPTDF = np.reshape(DPTDF.values.T, (1,DPTDF.size), order="F")
+        DPTDF = np.reshape(DPTDF.values.T, (1, DPTDF.size), order="F")
 
         # Demand vector for each hour
-        D = np.reshape(demandProfile.values.T,(1,demandProfile.size), order="F")
+        D = np.reshape(demandProfile.values.T, (1, demandProfile.size), order="F")
 
         # compute the incidence matrix
         Imat = self.__incidenceMat()
 
         # Define Aeq:
         if self.DR:
-            # Aeq1 (Nodal Balance, Demand Response, Line Change) 
-            AeqPrim = np.block([[self.ipf.T * np.identity(self.n), self.ipf.T * np.identity(self.n), Imat], #% Nodal Balance Equations
-                            [-self.PTDF_pf.values, -self.PTDF_pf.values, np.identity(self.l)]])               #% Change in Flows Equations
-            Aeq = sparse.kron(sparse.csr_matrix(AeqPrim), sparse.csr_matrix(np.eye(self.pointsInTime)))                         #% Expand temporal equations
+            # Aeq1 (Nodal Balance, Demand Response, Line Change)
+            AeqPrim = np.block([[self.ipf.T * np.identity(self.n), self.ipf.T * np.identity(self.n), Imat], # Nodal Balance Equations
+                            [-self.PTDF_pf.values, -self.PTDF_pf.values, np.identity(self.l)]])             # Change in Flows Equations
+            Aeq = sparse.kron(sparse.csr_matrix(AeqPrim), sparse.csr_matrix(np.eye(self.pointsInTime)))     # Expand temporal equations
                   
         else:
             # Aeq1 (Nodal Balance, Line Change) 

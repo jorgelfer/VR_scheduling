@@ -71,20 +71,31 @@ def load_GenerationMix(script_path, freq):
     return genAlpha, genBeta
 
 
-def getInitDemand(scriptPath, dss, freq, loadMult):
+def getInitDemand(dss, initParams):
+
+    # preprocesss
+    script_path = initParams["script_path"]
+    freq = initParams["freq"]
+    loadMult = int(initParams["loadMult"])
+    userDemand = initParams["userDemand"]
 
     # get all node-based buses
     nodeNames = dss.circuit_all_node_names()
+
     # get native load
     loadNames, loadKws, loadKvars = get_1ph_demand(dss, nodeNames)
+
     # get native loadshape
-    _, genBeta = load_GenerationMix(scriptPath, freq)
+    _, genBeta = load_GenerationMix(script_path, freq)
+
     # expand dims of native load
     demandProfile = loadMult * loadKws.to_frame()
     demandQrofile = loadMult * loadKvars.to_frame()
+
     # Expand feeder demand for time series analysis
     demandProfile = demandProfile.values @ genBeta.values.T  # 2018-08-14
     demandQrofile = demandQrofile.values @ genBeta.values.T  # 2018-08-14
+
     # Active Power df
     dfDemand = pd.DataFrame(demandProfile)
     dfDemand.index = loadKws.index
@@ -92,20 +103,31 @@ def getInitDemand(scriptPath, dss, freq, loadMult):
 
     # get real load
     #############
-    realDemand = load_hourlyDemand(scriptPath, len(loadNames), freq)
-    realDemand = realDemand.T
-    realDemand = realDemand[:len(loadNames)]
-    realDemand = loadMult*realDemand
-    dfDemand.loc[loadNames.index, :] = realDemand.values
+    # realDemand = load_hourlyDemand(scriptPath, len(loadNames), freq)
+    # realDemand = realDemand.T
+    # realDemand = realDemand[:len(loadNames)]
+    # realDemand = loadMult*realDemand
+    # dfDemand.loc[loadNames.index, :] = realDemand.values
 
     # Reactive Power df
     # if fixed power factor:
     # random power factors
-    np.random.seed(2022)
-    PF = np.random.uniform(0.85, 1, size=len(dfDemand.index))
-    dfDemandQ = (np.tan(np.arccos(PF)) * dfDemand.T).T
+    # np.random.seed(2022)
+    # PF = np.random.uniform(0.85, 1, size=len(dfDemand.index))
+    # dfDemandQ = (np.tan(np.arccos(PF)) * dfDemand.T).T
     # else:
-    # dfDemandQ = pd.DataFrame(demandQrofile)
-    # dfDemandQ.index = loadKvars.index
-    # dfDemandQ.columns = genBeta.index.strftime('%H:%M')
-    return loadNames, dfDemand, dfDemandQ
+    dfDemandQ = pd.DataFrame(demandQrofile)
+    dfDemandQ.index = loadKvars.index
+    dfDemandQ.columns = genBeta.index.strftime('%H:%M')
+
+    # correct native load by user demand
+    if userDemand != "None":
+        dfDemand.loc[loadNames.index, :] = userDemand
+
+    # initialize out DSS dict with init demand values
+    outDSS = dict()
+    outDSS["loadNames"] = loadNames
+    outDSS["dfDemand"] = dfDemand
+    outDSS["dfDemandQ"] = dfDemandQ
+
+    return outDSS 

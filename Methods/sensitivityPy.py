@@ -46,10 +46,10 @@ class sensitivityPy:
     def modifyDSS(self, out, baseVolts):
         
         # extract dispatch results
-        Pg, Pdr, Pchar, Pdis = self.__extractOutput(out)
+        Pg, Pdr, Pchar, Pdis, R = self.__extractOutput(out)
         
         # modify loads
-        if Pdr.any(axis=None):
+        if Pdr is not None:
             self.__modifyAllLoads(Pdr)
         
         # create PVs
@@ -60,9 +60,12 @@ class sensitivityPy:
         if Pdis is not None:
             self.__createPG(Pdis, baseVolts)
 
-        # create Storage charge 
+        # create Storage charge
         if Pchar is not None:
             self.__createLoad(Pchar)
+
+        if R is not None:
+            self.__modifyR(R)
 
     def voltageMags(self):
         # get all node magnitudes
@@ -121,10 +124,9 @@ class sensitivityPy:
                 # get this element node and discard the reference
                 nodes = [i for i in self.dss.cktelement_node_order() if i != 0]
                 # reorder the number of nodes
-                nodes = np.asarray(nodes).reshape((int(len(nodes)/2),-1),order="F")                
-                
-                for t1n, t2n in zip(nodes[:,0],nodes[:,1]):
-                    lname.append("L"+ buses[0].split(".")[0] + f".{t1n}" + "-" + buses[1].split(".")[0] + f".{t1n}")
+                nodes = np.asarray(nodes).reshape((int(len(nodes) / 2), -1), order="F")
+                for t1n, t2n in zip(nodes[:, 0], nodes[:, 1]):
+                    lname.append("L" + buses[0].split(".")[0] + f".{t1n}" + "-" + buses[1].split(".")[0] + f".{t1n}")
     
             elif "Transformer" in elem:
                 # line name
@@ -145,13 +147,12 @@ class sensitivityPy:
     
     def __extractOutput(self, out):
         """Method to define outputs"""
-    
         Pg   = out['Gen'] 
         Pdr  = out['DR']   
         Pchar= out['Pchar']  
         Pdis = out['Pdis']  
-    
-        return Pg, Pdr, Pchar, Pdis 
+        R = out['R']  
+        return Pg, Pdr, Pchar, Pdis, R 
     
     def __organizeFlows(self, lines, lines_KW_power, lines_KVAR_power, lname):
         # active flows
@@ -210,6 +211,25 @@ class sensitivityPy:
                     lines_KW_dict[elem] = [i for i in self.dss.cktelement_powers()[0::2] if i != 0]
                     lines_KVAR_dict[elem] = [i for i in self.dss.cktelement_powers()[1::2] if i != 0]
         return lines, lines_KW_dict, lines_KVAR_dict
+
+    def __modifyR(self, R):
+        "Method to modify LTC taps"
+        trafos = self.dss.transformers_all_Names()
+        regs = [tr for tr in trafos if "reg" in tr]
+        for i, reg in enumerate(regs):
+            # check if dispatch allocated DR for this load
+            if R.loc[reg, self.time] != 0:
+                # write trafo as main element
+                self.dss.transformers_write_name(reg)
+                # set the second winding active
+                self.dss.transformers_write_wdg(2)
+                # debug
+                readprevtap = self.dss.transformers_read_tap()  # debug
+                # make the tap modification
+                newtap = 1.0 + 0.00625 * round(R.loc[reg, self.time])
+                self.dss.text(f"Transformer.{reg}.Taps=[1.0, {newtap}]")
+                # debug
+                readnewtap = self.dss.transformers_read_tap()  # debug
 
     def __modifyAllLoads(self, Pdr):
         "Method to modify loads from a DSS file according to dispatch"

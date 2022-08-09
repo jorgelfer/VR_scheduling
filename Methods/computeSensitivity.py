@@ -4,27 +4,34 @@
 # @Author  : Jorge Fernandez
 """
 
-from Methods.sensitivityPy import sensitivityPy 
+from Methods.sensitivityPy import sensitivityPy
 import numpy as np
 import pandas as pd
 import pathlib
-import seaborn as sns
 import matplotlib.pyplot as plt
+import seaborn as sns
 
 
 def set_baseline(dss):
     
     dss.text("Set Maxiterations=100")
-    dss.text("Set controlmode=Off") # this is for disabling regulators
+    dss.text("Set controlmode=Off")  # this is for disabling regulators
 
-def computeSensitivity(script_path, case, dss, dss_file, plot):
 
+def computeSensitivity(dss, initParams):
+
+    # preprocess
+    dss_file = initParams["dssFile"]
+    case = initParams["case"]
+    script_path = initParams["script_path"]
+
+    # set baseline
     set_baseline(dss)
 
     # create a sensitivity object
     sen_obj = sensitivityPy(dss, time=0)
     
-    # get all node-based base volts 
+    # get all node-based base volts
     nodeBaseVoltage = sen_obj.get_nodeBaseVolts()
 
     # get all node-based buses, 
@@ -54,44 +61,40 @@ def computeSensitivity(script_path, case, dss, dss_file, plot):
         # create a sensitivity object
         sen_obj = sensitivityPy(dss, time=0)
 
-        # Perturb DSS with small gen 
-        sen_obj.perturbDSS(node, kv=nodeBaseVoltage[node], kw=10, P=True) # 10 kw
-        
+        # Perturb DSS with small gen
+        sen_obj.perturbDSS(node, kv=nodeBaseVoltage[node], kw=10, P=True)  # 10 kw
         dss.text("solve")
 
         # compute Voltage sensitivity
         currVolts, _ = sen_obj.voltageProfile()
-        VS[:,n] =  currVolts- baseVolts
-        
+        VS[:, n] = currVolts - baseVolts
         # compute PTDF
         currPjk, _, _, _ = sen_obj.flows(nodeLineNames)
-        PTDF_jk[:,n] =  currPjk - basePjk
+        PTDF_jk[:, n] = currPjk - basePjk
 
     # save
     dfVS = pd.DataFrame(VS, np.asarray(nodeNames), np.asarray(nodeNames))
-    dfVS.to_pickle(pathlib.Path(script_path).joinpath("inputs", case,"VoltageSensitivity.pkl"))
-    dfPjk = pd.DataFrame(PTDF_jk,np.asarray(nodeLineNames), np.asarray(nodeNames))
-    dfPjk.to_pickle(pathlib.Path(script_path).joinpath("inputs",case, "PTDF_jk.pkl"))
+    dfVS.to_pickle(pathlib.Path(script_path).joinpath("inputs", case, "VoltageSensitivity.pkl"))
+    dfPjk = pd.DataFrame(PTDF_jk, np.asarray(nodeLineNames), np.asarray(nodeNames))
+    dfPjk.to_pickle(pathlib.Path(script_path).joinpath("inputs", case, "PTDF_jk.pkl"))
 
-    if plot:
+    if initParams["plot"] == "True":
         h = 20
         w = 20
         ext = '.png'
-        
         # VoltageSensitivity
         plt.clf()
-        fig, ax = plt.subplots(figsize=(h,w))                
+        fig, ax = plt.subplots(figsize=(h, w))
         ax = sns.heatmap(dfVS, annot=False)
         fig.tight_layout()
-        output_img = pathlib.Path(script_path).joinpath("outputs","VoltageSensitivity" + ext)
+        output_img = pathlib.Path(script_path).joinpath("outputs", "VoltageSensitivity" + ext)
         plt.savefig(output_img)
         plt.close('all')
-        
         # PTDF
         plt.clf()
-        fig, ax = plt.subplots(figsize=(h,w))                
+        fig, ax = plt.subplots(figsize=(h, w))
         ax = sns.heatmap(dfPjk, annot=False)
         fig.tight_layout()
-        output_img = pathlib.Path(script_path).joinpath("outputs","PTDF" + ext)
+        output_img = pathlib.Path(script_path).joinpath("outputs", "PTDF" + ext)
         plt.savefig(output_img)
         plt.close('all')

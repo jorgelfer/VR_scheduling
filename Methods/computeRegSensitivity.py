@@ -17,7 +17,11 @@ def set_baseline(dss):
     dss.text("Set controlmode=Off")  # disabling regulators
 
 
-def computeRegSensitivity(script_path, case, dss, dss_file, plot):
+def computeRegSensitivity(dss, initParams):
+    # preprocess
+    dss_file = initParams["dssFile"]
+    case = initParams["case"]
+    script_path = initParams["script_path"]
     # initial DSS execution
     dss.text(f"Compile [{dss_file}]")
     set_baseline(dss)
@@ -53,7 +57,7 @@ def computeRegSensitivity(script_path, case, dss, dss_file, plot):
         dss.text("solve")
         # compute Voltage sensitivity
         currVolts = sen_obj.voltageMags()
-        dV[:, r] = currVolts- baseVolts
+        dV[:, r] = currVolts - baseVolts
         # compute PTDF
         currPjk, _, _, _ = sen_obj.flows(nodeLineNames)
         dPjk[:, r] = currPjk - basePjk
@@ -64,7 +68,7 @@ def computeRegSensitivity(script_path, case, dss, dss_file, plot):
     dfPjk = pd.DataFrame(dPjk, np.asarray(nodeLineNames), np.asarray(regs))
     dfPjk.to_pickle(pathlib.Path(script_path).joinpath("inputs", case, "FlowsToRegSensitivity.pkl"))
 
-    if plot:
+    if initParams["plot"] == "True":
         h = 20
         w = 20
         ext = '.png'

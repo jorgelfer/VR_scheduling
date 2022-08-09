@@ -25,25 +25,24 @@ def set_baseline(dss):
     dss.text("Set controlmode=OFF")
     
 
-
-def plot_sensi(dfVolts, dfFlows, cond, reg, script_path):
+def plot_sensi(dfVolts, dfFlows, cond, path, dV_min, dV_max, dPjk_min, dPjk_max):
     h = 20
     w = 20
     ext = '.png'
     # VoltageSensitivity
     plt.clf()
     fig, ax = plt.subplots(figsize=(h, w))
-    ax = sns.heatmap(dfVolts, annot=False)
+    ax = sns.heatmap(dfVolts, annot=False, vmin=dV_min, vmax=dV_max)
     fig.tight_layout()
-    output_img = pathlib.Path(script_path).joinpath("outputs", f"VoltageSensitivity_{reg}" + cond + ext)
+    output_img = pathlib.Path(path).joinpath("VoltageSensitivity_" + cond + ext)
     plt.savefig(output_img)
     plt.close('all')
     # PTDF
     plt.clf()
-    fig, ax = plt.subplots(figsize=(h, w))               
-    ax = sns.heatmap(dfFlows, annot=False)
+    fig, ax = plt.subplots(figsize=(h, w))
+    ax = sns.heatmap(dfFlows, annot=False, vmin=dPjk_min, vmax=dPjk_max)
     fig.tight_layout()
-    output_img = pathlib.Path(script_path).joinpath("outputs", f"PTDF_{reg}" + cond + ext)
+    output_img = pathlib.Path(path).joinpath("PTDF_" + cond + ext)
     plt.savefig(output_img)
     plt.close('all')
 
@@ -105,16 +104,18 @@ initPjk, _, _, _ = sen.flows(nodeLineNames)
 trafos = dss.transformers_all_Names()
 regs = [tr for tr in trafos if "reg" in tr]
 
-# base sensitivity
-dfV_init = pd.read_pickle(pathlib.Path(script_path).joinpath("inputs", dssCase, "VoltageSensitivity.pkl"))
-dV_dr = pd.read_pickle(pathlib.Path(script_path).joinpath("inputs", dssCase, "VoltageToRegSensitivity.pkl"))
-dfPjk_init = pd.read_pickle(pathlib.Path(script_path).joinpath("inputs", dssCase, "PTDF.pkl"))
-dPjk_dr = pd.read_pickle(pathlib.Path(script_path).joinpath("inputs", dssCase, "FlowsToRegSensitivity.pkl"))
+# load sensitivity of quantities to reg
+dVdR = pd.read_pickle(pathlib.Path(script_path).joinpath("inputs", dssCase, "VoltageToRegSensitivity.pkl"))
+dPjkdR = pd.read_pickle(pathlib.Path(script_path).joinpath("inputs", dssCase, "FlowsToRegSensitivity.pkl"))
 
-for reg in regs:
-    print(f"{reg}")
-    dPjk = np.zeros([len(nodeLineNames), len(nodeNames)])
-    dV = np.zeros([len(nodeNames), len(nodeNames)])
+# load or compute reg affected sensitivities
+dVdP_path = pathlib.Path(script_path).joinpath("inputs", dssCase, "VoltageSensitivity.pkl")
+dPjkdP_path = pathlib.Path(script_path).joinpath("inputs", dssCase, "PTDF.pkl")
+
+if not os.path.isfile(dVdP_path) or not os.path.isfile(dPjkdP_path):
+    # prelocate
+    dPjkdP_a = np.zeros([len(nodeLineNames), len(nodeNames)])
+    dVdP_a = np.zeros([len(nodeNames), len(nodeNames)])
     # main loop through all nodes
     for n, node in enumerate(nodeNames):
         # fresh compilation to remove previous modifications
@@ -124,9 +125,6 @@ for reg in regs:
         # create a sensitivity object
         sen_obj = sensitivityPy(dss, time=0)
 
-        # perturb by changing a tap
-        sen_obj.perturbRegDSS(reg, 1.0 + 0.00625)  # +1 tap
-
         # Perturb DSS with small gen
         sen_obj.perturbDSS(node, kv=nodeBaseVolts[node], kw=10, P=True)  # 10 kw
 
@@ -134,24 +132,107 @@ for reg in regs:
 
         # compute Voltage sensitivity
         currVolts, _ = sen_obj.voltageProfile()
-        dV[:, n] =  currVolts- initVolts
+        dVdP_a[:, n] =  currVolts- initVolts
 
         # compute PTDF
         currPjk, _, _, _ = sen_obj.flows(nodeLineNames)
-        dPjk[:, n] = currPjk - initPjk
+        dPjkdP_a[:, n] = currPjk - initPjk
 
     # save
-    dfVS = pd.DataFrame(dV, np.asarray(nodeNames), np.asarray(nodeNames))
-    dfVS.to_pickle(pathlib.Path(script_path).joinpath("inputs", dssCase, "VoltageSensitivity_{reg}.pkl"))
-    dfPjk = pd.DataFrame(dPjk, np.asarray(nodeLineNames), np.asarray(nodeNames))
-    dfPjk.to_pickle(pathlib.Path(script_path).joinpath("inputs", dssCase, "PTDF_{reg}.pkl"))
+    dVdP = pd.DataFrame(dVdP_a, np.asarray(nodeNames), np.asarray(nodeNames))
+    dVdP.to_pickle(dVdP_path)
+    dPjkdP = pd.DataFrame(dPjkdP_a, np.asarray(nodeLineNames), np.asarray(nodeNames))
+    dPjkdP.to_pickle(dPjkdP_path)
 
-    plot_sensi(dfVS, dfPjk, "ori", reg, script_path)
+else:
+    dVdP = pd.read_pickle(dVdP_path)
+    dPjkdP = pd.read_pickle(dPjkdP_path)
+
+##############################################################################
+# 2. compute regulator affected sensitivities
+##############################################################################
+
+for reg in regs:
+    print(f"{reg}")
+
+    # load or compute reg affected sensitivities
+    dVdRdP_path = pathlib.Path(script_path).joinpath("inputs", dssCase, f"VoltageSensitivity_{reg}.pkl")
+    dPjkdRdP_path = pathlib.Path(script_path).joinpath("inputs", dssCase, f"PTDF_{reg}.pkl")
+
+    if not os.path.isfile(dVdRdP_path) or not os.path.isfile(dPjkdRdP_path):
+        # prelocate
+        dVdRdP_a = np.zeros([len(nodeNames), len(nodeNames)])
+        dPjkdRdP_a = np.zeros([len(nodeLineNames), len(nodeNames)])
+        # main loop through all nodes
+        for n, node in enumerate(nodeNames):
+            # fresh compilation to remove previous modifications
+            dss.text(f"Compile [{dssFile}]")
+            set_baseline(dss)
+
+            # create a sensitivity object
+            sen_obj = sensitivityPy(dss, time=0)
+
+            # perturb by changing a tap
+            sen_obj.perturbRegDSS(reg, 1.0 + 0.00625)  # +1 tap
+
+            # Perturb DSS with small gen
+            sen_obj.perturbDSS(node, kv=nodeBaseVolts[node], kw=10, P=True)  # 10 kw
+
+            dss.text("solve")
+
+            # compute Voltage sensitivity
+            currVolts, _ = sen_obj.voltageProfile()
+            dVdRdP_a[:, n] =  currVolts- initVolts
+
+            # compute PTDF
+            currPjk, _, _, _ = sen_obj.flows(nodeLineNames)
+            dPjkdRdP_a[:, n] = currPjk - initPjk
+
+        # save
+        dVdRdP = pd.DataFrame(dVdRdP_a, np.asarray(nodeNames), np.asarray(nodeNames))
+        dVdRdP.to_pickle(dVdRdP_path)
+        dPjkdRdP = pd.DataFrame(dPjkdRdP_a, np.asarray(nodeLineNames), np.asarray(nodeNames))
+        dPjkdRdP.to_pickle(dPjkdRdP_path)
+
+    else:
+        dVdRdP = pd.read_pickle(dVdRdP_path)
+        dPjkdRdP = pd.read_pickle(dPjkdRdP_path)
+
+    # directory to store plots
+    output_dirReg = pathlib.Path(output_dir).joinpath(f"{reg}")
+    if not os.path.isdir(output_dirReg):
+        os.mkdir(output_dirReg)
+
+    # new dataframes
+    diff_dV = dVdRdP - dVdP
+    diff_dPjk = dPjkdRdP - dPjkdP
+
+    newdV = dVdP.add(dVdR.loc[:, reg], axis=0)
+    newdPjk = dPjkdP.add(dPjkdR.loc[:, reg], axis=0)
+
+    new_diff_dV = dVdRdP - newdV
+    new_diff_dPjk = dPjkdRdP - newdPjk
+
+    # np.linalg.norm(diff_dV, ord=np.inf)
+    # np.linalg.norm(diff_dPjk, ord=np.inf) # 1,2,np.inf
+    # np.linalg.norm(new_diff_dV, ord=np.inf)
+    # np.linalg.norm(new_diff_dPjk, ord=np.inf) # 1,2,np.inf
+
+    # mins for plotting
+    dV_min = min([dVdP.min().min(), dVdRdP.min().min(),
+                  diff_dV.min().min(), new_diff_dV.min().min()])
+    dV_max = max([dVdP.max().max(), dVdRdP.max().max(),
+                  diff_dV.max().max(), new_diff_dV.max().max()])
+    dPjk_min = min([dPjkdP.min().min(), dPjkdRdP.min().min(),
+                  diff_dPjk.min().min(), new_diff_dPjk.min().min()])
+    dPjk_max = max([dPjkdP.max().max(), dPjkdRdP.max().max(),
+                  diff_dPjk.max().max(), new_diff_dPjk.max().max()])
 
     # plot
-    plot_sensi(dfVS - dfV_init, dfPjk - dfPjk_init, "diff", reg, script_path)
+    plot_sensi(dVdP, dPjkdP, "dxdP", output_dirReg, dV_min, dV_max, dPjk_min, dPjk_max)
 
-    # compute difference
-    newdV = dfV_init.add(dV_dr.loc[:, reg], axis=0)
-    newdPjk = dfPjk_init.add(dPjk_dr.loc[:, reg], axis=0)
-    plot_sensi(dfVS - newdV, dfPjk - newdPjk, "add-diff", reg, script_path)
+    plot_sensi(dVdRdP, dPjkdRdP, "dxdRdP", output_dirReg, dV_min, dV_max, dPjk_min, dPjk_max)
+
+    plot_sensi(diff_dV, diff_dPjk, "diff", output_dirReg, dV_min, dV_max, dPjk_min, dPjk_max)
+
+    plot_sensi(new_diff_dV, new_diff_dPjk, "newDiff", output_dirReg, dV_min, dV_max, dPjk_min, dPjk_max)
