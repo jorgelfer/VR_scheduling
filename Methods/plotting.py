@@ -158,16 +158,42 @@ class plottingDispatch:
         plt.savefig(output_img)
         plt.close('all')
 
+    def plot_reg(self, R):
+
+        #######################
+        # Power Dispatch  #
+        #######################
+        plt.clf()
+        fig, ax = plt.subplots(figsize=(h, w))
+        R.T.plot()  # use any to plot dispatched nodes
+        if self.title:
+            ax.set_title('Regulators taps [-16, 16]', fontsize=15)
+            plt.ylabel('tap', fontsize=12)
+            plt.xlabel('Time (hrs)', fontsize=12)
+        fig.tight_layout()
+
+        output_dirReg = pathlib.Path(self.output_dir).joinpath("Reg")
+        if not os.path.isdir(output_dirReg):
+            os.mkdir(output_dirReg)
+
+        name = f"Reg_tap_{self.niter}_{self.timestamp}"
+        output_img = pathlib.Path(self.output_dir).joinpath(name + ext)
+        plt.savefig(output_img)
+        plt.close('all')
+
+        # save as pkl as well
+        output_pkl = pathlib.Path(output_dirReg).joinpath(name + ".pkl")
+        R.to_pickle(output_pkl)
+
     def plot_Dispatch(self, Pg):
 
         #######################
-        ## Power Dispatch  ##
+        # Power Dispatch  #
         #######################
-    
         plt.clf()
-        fig, ax = plt.subplots(figsize=(h,w))
+        fig, ax = plt.subplots(figsize=(h, w))
         Pg = Pg[Pg.any(axis=1)]
-        Pg.T.plot(legend=False) # use any to plot dispatched nodes
+        Pg.T.plot(legend=False)  # use any to plot dispatched nodes
         if self.title:
             ax.set_title(f'Power substation - peak = {np.sum(np.max(Pg,0))}', fontsize=15)
             plt.ylabel('Power (kW)', fontsize=12)
@@ -178,7 +204,7 @@ class plottingDispatch:
         if not os.path.isdir(output_dirDispatch):
             os.mkdir(output_dirDispatch)
 
-        output_img = pathlib.Path(self.output_dir).joinpath(f"Power_Dispatch_{self.niter}_{self.timestamp}"+ ext)
+        output_img = pathlib.Path(self.output_dir).joinpath(f"Power_Dispatch_{self.niter}_{self.timestamp}" + ext)
         plt.savefig(output_img)
         plt.close('all')
 

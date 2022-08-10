@@ -65,7 +65,6 @@ class SLP_dispatch:
         # preprocess
         demandProfile = self.outDSS["dfDemand"]
         demandProfilei = demandProfile.any(axis=1)
-        lnodes = np.where(demandProfilei)[0]
         Pjk_0 = self.outDSS["initPjks"]
         v_0 = self.outDSS["initVolts"]
         Pg_0 = self.outDSS["initPower"]
@@ -78,7 +77,7 @@ class SLP_dispatch:
         # build equality constraints matrices
         Aeq, beq = self.__buildEquality(demandProfile)
         # build inequality constraints matrices
-        A, b = self.__buildInequality(Pjk_0, v_0, Pg_0, PDR_0, lnodes)
+        A, b = self.__buildInequality(Pjk_0, v_0, Pg_0, PDR_0)
 
         # build cost function and bounds
         ub, lb, f = self.__buildCostAndBounds(demandProfile)
@@ -121,7 +120,7 @@ class SLP_dispatch:
 
         return ub, lb, f
 
-    def __buildInequality(self, Pjk_0, v_0, Pg_0, PDR_0, lnodes):
+    def __buildInequality(self, Pjk_0, v_0, Pg_0, PDR_0):
         """Build inequality constraints"""
         # initial power
         self.Pg_0 = np.reshape(Pg_0.values.T, (1, np.size(Pg_0)), order="F")
@@ -138,11 +137,11 @@ class SLP_dispatch:
 
         # for flows ###
         # define limits
-        Pjk_lim = np.reshape(self.Pjk_lim.values.T, (1, np.size(self.Pjk_lim.values)), order="F") 
+        Pjk_lim = np.reshape(self.Pjk_lim.values.T, (1, np.size(self.Pjk_lim.values)), order="F")
         Pjk_lb = Pjk_lim
         Pjk_ub = Pjk_lim
         # compute matrices
-        A_flows, b_flows = self.__buildSensitivityInequality(self.PTDF, Pjk_0, Pjk_lb, Pjk_ub) # restrict only violating lines: this will be done automatically by gurobi
+        A_flows, b_flows = self.__buildSensitivityInequality(self.PTDF, Pjk_0, Pjk_lb, Pjk_ub)  # restrict only violating lines: this will be done automatically by gurobi
         # concatenate both contributions
         A = sparse.vstack((A_flows, A_v))
         b = np.concatenate((b_flows, b_v), axis=0)
@@ -286,7 +285,7 @@ class SLP_dispatch:
         # add storage portion to lower bounds
         regMin = -16 * np.ones((1, self.numRegs))
         lb = np.concatenate((lb.T,
-                             np.kron(regMin, np.zeros((1, self.pointsInTime))).T), 0)
+                             np.kron(regMin, np.ones((1, self.pointsInTime))).T), 0)
 
         # add storage portion to upper bounds
         regMax = 16 * np.ones((1, self.numRegs))

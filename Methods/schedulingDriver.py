@@ -183,8 +183,8 @@ def schedulingDriver(iterName, outDSS, initParams):
     Pjk_0 = outDSS['initPjks']
     Pjk_lim = outDSS['limPjks']
     # debug  #
-    Lmaxi = 2000 * np.ones((len(Pjk_lim.index),1))
-    Lmax = np.kron(Lmaxi, np.ones((1,len(Pjk_lim.columns))))
+    Lmaxi = 2000 * np.ones((len(Pjk_lim.index), 1))
+    Lmax = np.kron(Lmaxi, np.ones((1, len(Pjk_lim.columns))))
     Lmax = pd.DataFrame(Lmax, index=Pjk_lim.index, columns=Pjk_lim.columns)
     outDSS['limPjks'] = Lmax
     #  #
@@ -222,10 +222,9 @@ def schedulingDriver(iterName, outDSS, initParams):
         pv2bus = '680'
 
     # reshape base voltage:
-    v_basei = v_base[lnodes].to_frame()
+    v_basei = v_base.to_frame()
     v_base = np.kron(v_basei, np.ones((1, pointsInTime)))
     v_base = pd.DataFrame(v_base, index=v_basei.index, columns=v_0.columns)
-    outDSS["v_base"] = v_base  # store the temporally expanded vBase
     # violatingVolts = compute_violatingVolts(v_0, v_base, vmin, vmax)
     # load PTDF results
     PTDF = load_PTDF(script_path, case)
@@ -286,7 +285,11 @@ def schedulingDriver(iterName, outDSS, initParams):
     sen["dvdr"] = dvdr
     sen["dpjkdr"] = dpjkdr
 
-    # debu
+    # only want to control voltage at nodes with load
+    outDSS["initVolts"] = v_0[demandProfilei.values]
+    outDSS["v_base"] = v_base[demandProfilei.values]  # store the temporally expanded vBase
+    sen["dvdp"] = dvdp[demandProfilei.values]
+    sen["dvdr"] = dvdr[demandProfilei.values]
 
     # call the dispatch method
     if initParams["dispatchType"] == 'SLP':
@@ -326,7 +329,6 @@ def schedulingDriver(iterName, outDSS, initParams):
     else:
         outES['Pchar'] = None
         outES['Pdis'] = None
-        
     # plot output
     if initParams["plot"] == "True":
         # plot demand response
@@ -335,6 +337,7 @@ def schedulingDriver(iterName, outDSS, initParams):
         # plot Dispatch
         dfPg = pd.DataFrame(Pg, PTDF.columns, v_0.columns)
         plot_obj.plot_Dispatch(dfPg)
+        plot_obj.plot_reg(outES['R'])
         # plot Storage
         if flags["storage"]:
             plot_obj.plot_storage(E, batt, gCost[0, :])

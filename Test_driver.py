@@ -47,7 +47,7 @@ else:
     os.mkdir(output_dir13)
 # define traverse parameters
 batSizes = [0]
-pvSizes = [0]
+pvSizes = [150]
 loadMults = [1]  # 1 for default loadshape, 11 for real.
 
 # main loop
@@ -69,4 +69,4 @@ for lm, loadMult in enumerate(loadMults):
             ####################################
             # 1: compute scheduling
             ####################################
-            outES,outDSS = scheduling(initParams)
+            outES, outDSS = scheduling(initParams)
