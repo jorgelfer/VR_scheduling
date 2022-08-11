@@ -44,6 +44,16 @@ def create_battery(PTDF, pointsInTime, sbus, batSize):
     batt['BatPenalty'] = np.ones((1, numBatteries))
     return batt
 
+def create_reg(dxdr):
+    """function to define regulator parameters"""
+    reg = dict()
+    numRegs = len(dxdr.columns)
+    reg['numRegs'] = numRegs
+    reg['tapInit'] = np.zeros((1, numRegs))
+    reg['tapChange'] = 3 * np.ones((1, numRegs))
+    reg['regMaxTap'] = 16 * np.ones((1, numRegs))
+    return reg
+
 
 def load_PTDF(script_path, case):
     '''function to load PTDF'''
@@ -265,14 +275,19 @@ def schedulingDriver(iterName, outDSS, initParams):
     # Overall Generation costs:
     cgn = np.reshape(gCost.T, (1, gCost.size), order="F")
     # regulator costs
-    unitCost = np.array([[50, 20, 20, 20, 20, 20, 20]])
-    creg = np.kron(unitCost, np.ones((1, pointsInTime)))
+    val = 0.01 
+    unitCost = val * np.array([[1, 1, 1, 1, 1, 1, 1]])
+    cctap = np.kron(unitCost, np.ones((1, pointsInTime)))
+    val = 10
+    unitCost = val * np.array([[1, .3, .3, .3, .3, .3, .3]])
+    ccap = np.kron(unitCost, np.ones((1, pointsInTime + 1)))
     # create dict to store costs
     costs = dict()
     costs["cgn"] = cgn
     costs["cdr"] = cdr
     costs["clin"] = clin
-    costs["creg"] = creg
+    costs["cctap"] = cctap
+    costs["ccap"] = ccap
     # load voltage base at each node
     dvdp = load_voltageSensitivity(script_path, case)
     # load regulator sensitivities
@@ -302,7 +317,7 @@ def schedulingDriver(iterName, outDSS, initParams):
     # Create plot object
     plot_obj = plottingDispatch(iterName, pointsInTime, initParams, PTDF=PTDF)
     # extract dispatch results
-    Pg, Pdr, Pij, Pchar, Pdis, E, R = plot_obj.extractResults(x, flags, batt)
+    Pg, Pdr, Pij, Pchar, Pdis, E, deltaT, R = plot_obj.extractResults(x, flags, batt)
     # extract LMP results
     LMP, _, _, _, _, _ = plot_obj.extractLMP(LMP, flags, batt)
     #

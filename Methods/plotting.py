@@ -410,7 +410,9 @@ class plottingDispatch:
         else:
             Pg = np.reshape(x.X[:n*PointsInTime], (PointsInTime,n), order='F').T
             Pdr = 0
-            R = np.reshape(x.X[n*PointsInTime:], (PointsInTime, 7), order='F').T
+            # R = np.reshape(x.X[n*PointsInTime:], (PointsInTime, 7), order='F').T
+            R = np.reshape(x.X[(n+m)*PointsInTime:(n+m)*PointsInTime + 7 *PointsInTime] , (PointsInTime, 7), order='F').T
+            Etap = np.reshape(x.X[(n+m+7)*PointsInTime:-7], (PointsInTime, 7), order='F').T
             if self.jk:
                 Pij = np.reshape(x.X[n*PointsInTime:(n+m)*PointsInTime], (PointsInTime, m), order='F').T
             else:
@@ -419,4 +421,4 @@ class plottingDispatch:
             Pdis  = 0
             E     = 0
 
-        return Pg, Pdr, Pij, Pchar, Pdis, E, R 
+        return Pg, Pdr, Pij, Pchar, Pdis, E, R, Etap
