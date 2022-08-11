@@ -17,8 +17,7 @@ class SLP_dispatch:
         self.Gmax = Gmax            # Max generation
         self.cgn = costs["cgn"]              # Cost of generation
         self.clin = costs["clin"]            # "cost of lines"
-        self.cctap = costs["cctap"]            # "cost of changing taps
-        self.ccap = costs["ccap"]              # "cost of capacity
+        self.cctap = costs["cctap"]            # "cost of lines"
         self.cdr = costs["cdr"]     # cost of demand response
         self.Pjk_lim = outDSS["limPjks"]      # thermal limit of the line
         self.v_base = outDSS["v_base"]        # Base voltage of the system in volts
@@ -65,6 +64,7 @@ class SLP_dispatch:
     def PTDF_SLP_OPF(self):
         # preprocess
         demandProfile = self.outDSS["dfDemand"]
+        demandProfilei = demandProfile.any(axis=1)
         Pjk_0 = self.outDSS["initPjks"]
         v_0 = self.outDSS["initVolts"]
         Pg_0 = self.outDSS["initPower"]
@@ -87,16 +87,14 @@ class SLP_dispatch:
             Aeq, A = self.__addStorage_A(Aeq, A)
             # modify beq, lb, ub, f
             beq, ub, lb, f = self.__addStorage_rest(beq, ub, lb, f)
-            lb = lb.tolist()
-            ub = ub.tolist()
         # add portion of regulators to matrices
         if self.reg:
             # modify A, Aeq
             Aeq, A = self.__addReg(Aeq, A)
             # modify beq, lb, ub, f
-            beq, ub, lb, f = self.__addReg_rest(beq, ub, lb, f)
+            ub, lb, f = self.__addReg_rest(ub, lb, f)
         # compute linear program optimization
-        x, m, LMP = self.__linprog(f, Aeq, beq, A, b, lb, ub)
+        x, m, LMP = self.__linprog(f, Aeq, beq, A, b, lb.T, ub.T)
         return x, m, LMP
 
     # helper methods
@@ -133,7 +131,7 @@ class SLP_dispatch:
         v_ub = (self.vmax * v_base)
 
         # compute matrices
-        A_v, b_v = self.__buildSensitivityInequality(self.dvdr, self.dvdp, v_0, v_lb, v_ub)
+        A_v, b_v = self.__buildSensitivityInequality(self.dvdp, v_0, v_lb, v_ub)
 
         # for flows ###
         # define limits
@@ -141,17 +139,16 @@ class SLP_dispatch:
         Pjk_lb = Pjk_lim
         Pjk_ub = Pjk_lim
         # compute matrices
-        A_flows, b_flows = self.__buildSensitivityInequality(self.dpjkdr, self.PTDF, Pjk_0, Pjk_lb, Pjk_ub)  # restrict only violating lines: this will be done automatically by gurobi
+        A_flows, b_flows = self.__buildSensitivityInequality(self.PTDF, Pjk_0, Pjk_lb, Pjk_ub)  # restrict only violating lines: this will be done automatically by gurobi
         # concatenate both contributions
         A = sparse.vstack((A_flows, A_v))
         b = np.concatenate((b_flows, b_v), axis=0)
         return A, b
 
-    def __buildSensitivityInequality(self, dxdr, dxdp, x_0, x_lb, x_ub):
+    def __buildSensitivityInequality(self, dxdp, x_0, x_lb, x_ub):
         """for both voltage and flows inequalities the procedure is very similar
             This method seeks to standardize the procedure"""
-        dxdp = dxdp.values # remove the dataframe
-        dxdr = dxdr.values # remove the dataframe
+        dxdp = dxdp.values  # remove the dataframe
         # Define A
         if self.DR:
             # define A
@@ -169,16 +166,12 @@ class SLP_dispatch:
 
         # reshape initial value
         x_0 = np.reshape(x_0.values.T, (1, np.size(x_0.values)), order="F")
-        r_0 = 16 * np.ones((self.numRegs, self.pointsInTime))
-        r_0 = np.reshape(r_0.T, (1, np.size(r_0)), order="F")
         # dxdp @ P0:
         # expand dxdp
         dxdp_kron = np.kron(dxdp, np.eye(self.pointsInTime))
-        dxdr_kron = np.kron(dxdr, np.eye(self.pointsInTime))
         aux_dxdp = dxdp_kron @ (self.Pg_0 + self.PDR_0).T
-        aux_dxdr = dxdr_kron @ r_0.T
-        b = np.concatenate((x_lb.T + x_0.T - aux_dxdp - aux_dxdr,
-                            x_ub.T - x_0.T + aux_dxdp + aux_dxdr), axis=0)
+        b = np.concatenate((x_lb.T + x_0.T - aux_dxdp,
+                            x_ub.T - x_0.T + aux_dxdp), axis=0)
         return A, b
 
     def __buildEquality(self, demandProfile):
@@ -216,49 +209,16 @@ class SLP_dispatch:
 
     def __addReg(self, Aeq, A):
         """ add reg portion for A's"""
-        if self.DR:
-            auxZero = np.zeros((self.numRegs * (self.pointsInTime + 2), 2 * self.n * self.pointsInTime))
-            Aeq1 = sparse.vstack((Aeq,
-                                  sparse.csr_matrix(auxZero)))  # Adding part of batteries eff. equations
-        else:
-            auxZero = np.zeros((self.numRegs * (self.pointsInTime + 2), self.n * self.pointsInTime))
-            Aeq1 = sparse.vstack((Aeq,
-                                  sparse.csr_matrix(auxZero))) # Adding part of batteries eff. equations
-        # Aeq1 at this moment:
-        # columns: Pt1...Ptf, PDRt1...PDRtf
-        # rows:    (n)*PointsInTime + numRegs*(PointsInTime+2)
-        tapChange = sparse.csr_matrix(np.zeros((Aeq.get_shape()[0],
-                                               2 * self.numRegs * self.pointsInTime)))  # considering both pos/neg change
-        Aeq2 = sparse.hstack((tapChange,
-                              sparse.csr_matrix(np.zeros((Aeq.get_shape()[0], self.numRegs * (self.pointsInTime + 1))))))
-        # Aeq2 is zero matrix because reg donot affect energy balance
-        # columns: Pt1...Ptf, PDRt1..PDRtf, Tt1...Ttf, Et1...Etf
-        # rows:    (n)*PointsInTime + (2 + PointsInTime)*numRegs
-
-        Aeq2_auxP, Aeq2_auxE, Aeq2_auxE0 = self.__regAeq2_aux()
-        Aeq2_aux = sparse.hstack((Aeq2_auxP, sparse.csr_matrix(Aeq2_auxE)))
-        Aeq2 = sparse.vstack((Aeq2, Aeq2_aux))
-
-        # Reg tap final conditions
-        Aeq2_aux2 = np.concatenate((np.zeros((self.numRegs, Aeq2_auxP.get_shape()[1])),
-                                    np.flip(Aeq2_auxE0.T, 1), np.flip(np.eye(self.numRegs),
-                                    0)), axis=1)
-        Aeq2 = sparse.vstack((Aeq2, sparse.csr_matrix(Aeq2_aux2)))
-        # Aeq2 finally:
-        # columns: PscBt1,PscBtf,...,PsdBt1,PsdBtf,...,EBt1,EBtf
+        # Aeq matrix to this moment
+        # columns: Pnt1,Pntf-Pdrt1,Pdrtf-PscBt1,PscBtf-PsdBt1,PsdBtf-EBt1,EBtf
         # rows:    (n+l)*PointsInTime + (2 + PointsInTime)*numBatteries
-        # Build Aeq matrix
-        Aeq = sparse.hstack((Aeq1, Aeq2))
-        # Aeq:
-        # columns: Pnt1,Pntf-Pjkt1,Pjktf-PscBt1,PscBtf-PsdBt1,PsdBtf-EBt1,EBtf
-        # rows:    (n+l)*PointsInTime + (2 + PointsInTime)*numBatteries
+        Aeq_reg = sparse.csr_matrix(np.zeros((Aeq.get_shape()[0], 2 * self.numRegs * self.pointsInTime)))
+        Aeq_new = sparse.hstack((Aeq, Aeq_reg))
 
-        #
         # Inequalities
-        #
         # build Ain:
         Ain = self.__regAin(A)
-        return Aeq, Ain
+        return Aeq_new, Ain
 
     def __addStorage_A(self, Aeq, A):
         """Compute the battery portion for A's"""
@@ -266,11 +226,11 @@ class SLP_dispatch:
         # columns: Pnt1,Pntf
         # rows:    (n+l)*PointsInTime + numBatteries*(PointsInTime+2)
         if self.DR:
-            auxZero = np.zeros((self.numBatteries * (self.pointsInTime + 2), 2 * self.n * self.pointsInTime))
+            auxZero = np.zeros((self.numBatteries*(self.pointsInTime + 2), 2 * self.n * self.pointsInTime))
             Aeq1 = sparse.vstack((Aeq,
                                   sparse.csr_matrix(auxZero)))  # Adding part of batteries eff. equations
         else:
-            auxZero = np.zeros((self.numBatteries * (self.pointsInTime + 2), self.n * self.pointsInTime))
+            auxZero = np.zeros((self.numBatteries*(self.pointsInTime + 2), self.n*self.pointsInTime))
             Aeq1 = sparse.vstack((Aeq,
                                   sparse.csr_matrix(auxZero))) # Adding part of batteries eff. equations
 
@@ -318,32 +278,22 @@ class SLP_dispatch:
         Ain = self.__storageAin(A)
         return Aeq, Ain
 
-    def __addReg_rest(self, beq, ub, lb, f):
+    def __addReg_rest(self, ub, lb, f):
         """add storage portion to beq, lb, ub, f"""
-        tapInit = 16 * np.ones((1, self.numRegs))  # assume initial taps at zero
-        beq = np.concatenate((beq, np.zeros((self.pointsInTime * self.numRegs, 1)),
-                              tapInit.T, np.zeros((self.numRegs, 1))), 0)
+        # add storage portion to lower bounds
+        regMaxTap = 16 * np.ones((1, self.numRegs))
+        lb = np.concatenate((lb.T,
+                             np.kron(regMaxTap, np.zeros((1, self.pointsInTime))).T,
+                             np.kron(regMaxTap, np.zeros((1, self.pointsInTime))).T), 0)
 
-        # add reg portion to lower bounds
-        changeTap = 3 * np.ones((1, self.numRegs))
-        regMaxTap = 32 * np.ones((1, self.numRegs))
+        # add storage portion to upper bounds
+        ub = np.concatenate((ub.T,
+                             np.kron(regMaxTap, np.ones((1, self.pointsInTime))).T,
+                             np.kron(regMaxTap, np.ones((1, self.pointsInTime))).T), 0)
 
-        lb = np.concatenate((lb.T,     # Generation limits
-              np.kron(changeTap, np.zeros((1, self.pointsInTime))).T,  # tap changin limits
-              np.kron(changeTap, np.zeros((1, self.pointsInTime))).T,  # tap changin limits
-              np.kron(regMaxTap, np.zeros((1, self.pointsInTime))).T,     # Regulator lower bound limit 
-              np.zeros((self.numRegs, 1))), 0)                   # Initial capacity limits
+        f = np.concatenate((f, self.cctap, self.cctap), 1)  # % x = Pg Pdr Plin Psc Psd E E0 r
 
-        # add reg portion to upper bounds
-        ub = np.concatenate((ub.T,                         # Generation & Line limits
-              np.kron(changeTap, np.ones((1, self.pointsInTime))).T,    # tap changin limits
-              np.kron(changeTap, np.ones((1, self.pointsInTime))).T,    # tap changin limits
-              np.kron(regMaxTap, np.ones((1, self.pointsInTime))).T,             # Regulator upper bound 
-              regMaxTap.T), 0)                   # Initial capacity limits
-
-        f = np.concatenate((f, self.cctap, self.cctap, self.ccap), 1)  # % x = Pg Pdr Plin Psc Psd E E0 r
-
-        return beq, ub, lb, f
+        return ub.T, lb.T, f
 
     def __addStorage_rest(self, beq, ub, lb, f):
         """add storage portion to beq, lb, ub, f"""
@@ -368,7 +318,7 @@ class SLP_dispatch:
 
         f = np.concatenate((f, self.ccharbat, self.ccapacity),1)  # % x = Pg Pdr Plin Psc Psd E E0
 
-        return beq, ub, lb, f
+        return beq, ub.T, lb.T, f
 
     def __regAin(self, A1):
         """include reg in inequality constraints"""
@@ -404,20 +354,10 @@ class SLP_dispatch:
     def __regSensitivityA(self, dxdr):
         dxdr = dxdr.values
         # define A
-        # portion related to lower bound
-        A_b1_aux1 = sparse.kron(-dxdr, sparse.csr_matrix(np.eye(self.pointsInTime)))
-        A_b1 = sparse.hstack((sparse.csr_matrix(np.zeros((dxdr.shape[0]*self.pointsInTime, 2 * self.numRegs * self.pointsInTime))), #delta tap
-                             A_b1_aux1,  # -dx/dp * (Etap)
-                             sparse.csr_matrix(np.zeros((dxdr.shape[0]*self.pointsInTime, self.numRegs))))) # -dx/dr *(0*Etap0)
+        A2 = np.block([[dxdr, -dxdr],     # -dv/dp * (-tapn, tapp) 
+                       [-dxdr, dxdr]])     # dv/dp * (-tapn, tapp) 
+        A2 = sparse.kron(sparse.csr_matrix(A2), sparse.csr_matrix(np.eye(self.pointsInTime)))
 
-        # portion related to upper bound
-        A_b2_aux1 = sparse.kron(dxdr, sparse.csr_matrix(np.eye(self.pointsInTime)))
-        A_b2 = sparse.hstack((sparse.csr_matrix(np.zeros((dxdr.shape[0]*self.pointsInTime, 2 * self.numRegs * self.pointsInTime))),  # delta tap 
-                             A_b2_aux1,  # dx/dp *(Etap)
-                             sparse.csr_matrix(np.zeros((dxdr.shape[0]*self.pointsInTime, self.numRegs)))))  # -dx/dr *(0*Etap)
-
-        # concatenate both blocks
-        A2 = sparse.vstack((A_b1, A_b2))
         return A2
 
     def __storageSensitivityA(self, row, dxdp):
@@ -426,13 +366,13 @@ class SLP_dispatch:
         # portion related to lower bound
         A_b1_aux = np.concatenate((dxdp[:, row], - 1./(self.batPenalty)*dxdp[:, row]), 1)
         A_b1_aux1 = sparse.kron(A_b1_aux, sparse.csr_matrix(np.eye(self.pointsInTime)))
-        A_b1 = sparse.hstack((A_b1_aux1,  # dx/dp * (Psc-Psd)
+        A_b1 = sparse.hstack((A_b1_aux1,  # -dx/dp * (-Psd+Psc)
                              sparse.csr_matrix(np.zeros((dxdp.shape[0]*self.pointsInTime, self.numBatteries*(self.pointsInTime + 1)) )) )) # -dx/dp *(0*E)
 
         # portion related to upper bound
         A_b2_aux = np.concatenate((-dxdp[:, row], 1./(self.batPenalty)*dxdp[:, row]), 1)
         A_b2_aux1 = sparse.kron(A_b2_aux, sparse.csr_matrix(np.eye(self.pointsInTime)))
-        A_b2 = sparse.hstack((A_b2_aux1,  # -dx/dp *(Psc-Psd)
+        A_b2 = sparse.hstack((A_b2_aux1,  # dx/dp *(-Psd+Psc)
                              sparse.csr_matrix(np.zeros((dxdp.shape[0]*self.pointsInTime, self.numBatteries*(self.pointsInTime + 1))))))  # -dx/dp *(0*E)
 
         # concatenate both blocks
@@ -447,62 +387,22 @@ class SLP_dispatch:
         ipf = self.ipf.values[row]
         # Aeq2 (Energy Storage impact on power equation)
         # Impact on power equations
-        batIncid_Psc = sparse.kron(sparse.csr_matrix(np.eye(len(ipf))),
-                                   sparse.csr_matrix(np.eye(self.pointsInTime)))
-        batIncid_Psd = sparse.kron(sparse.csr_matrix(np.eye(len(ipf)) * ipf),
-                                   sparse.csr_matrix(np.eye(self.pointsInTime)))
+        batIncid_Psc = sparse.kron(sparse.csr_matrix(np.eye(len(ipf))), sparse.csr_matrix(np.eye(self.pointsInTime)))
+        batIncid_Psd = sparse.kron(sparse.csr_matrix(np.eye(len(ipf)) * ipf), sparse.csr_matrix(np.eye(self.pointsInTime)))
         # Batt penalty
         Aeq2 = sparse.hstack((-batIncid_Psc,
                               batIncid_Psd,
-                              sparse.csr_matrix(np.zeros((len(ipf) * self.pointsInTime, self.numBatteries * (self.pointsInTime + 1))))))
+                              sparse.csr_matrix(np.zeros((len(ipf) * self.pointsInTime, self.numBatteries*(self.pointsInTime+1))))))
         # Aeq2 at this point:
         # columns: PscBt1,PscBtf,...,PsdBt1,PsdBtf,...,EBt1,EBtf
         # rows:    n*PointsInTime
         return Aeq2
 
-    def __regAeq2_aux(self):
-        """auxiliary matrices to include storage in equality constraints"""
-        # preprocess
-        tapChange = sparse.kron(sparse.csr_matrix(np.eye(self.numRegs)),
-                                sparse.csr_matrix(np.eye(self.pointsInTime)))
-
-        # Tap Balance Equations
-        # Aeq2_auxP:
-        # columns: RegRt1...RegRtf
-        # rows:    numRegs*PointsInTime
-        Aeq2_auxP = sparse.hstack((-tapChange,
-                                   tapChange))
-        Aeq2_auxP = sparse.vstack((Aeq2_auxP,
-                                  sparse.csr_matrix(np.zeros((self.numRegs, Aeq2_auxP.get_shape()[1])))))
-
-        # Aeq2_auxE:
-        # columns: EBt1...EBtf
-        # rows:    (PointsInTime + 1)*numRegs
-        Aeq2_auxE = np.eye((self.pointsInTime + 1) * self.numRegs)
-        for i in range(self.numRegs):
-            init = i * self.pointsInTime
-            endit = i * self.pointsInTime + self.pointsInTime
-            Aeq2_auxE[init:endit, init:endit] = Aeq2_auxE[init:endit, init:endit] - np.eye(self.pointsInTime, k=-1)
-        idx_E = [self.pointsInTime * self.numRegs, self.pointsInTime * self.numRegs]
-        idx_E0 = [self.pointsInTime * self.numRegs, (self.pointsInTime + 1) * self.numRegs]
-
-        Aeq2_auxE0 = np.zeros((self.pointsInTime * self.numRegs, self.numRegs))
-        c = 0
-        s = np.sum(Aeq2_auxE[:idx_E[0], :idx_E[1]], 1)
-        for i in range(self.pointsInTime * self.numRegs):
-            if s[i] == 1:
-                Aeq2_auxE0[i, c] = -1
-                c += 1
-        Aeq2_auxE[:idx_E0[0], idx_E0[0]:idx_E0[1] + 1] = Aeq2_auxE0
-        return Aeq2_auxP, Aeq2_auxE, Aeq2_auxE0
-
     def __storageAeq2_aux(self):
         """auxiliary matrices to include storage in equality constraints"""
         # preprocess
-        batIncid_Psc = sparse.kron(sparse.csr_matrix(np.eye(len(self.batEfficiencies.T)) * self.batEfficiencies),
-                                   sparse.csr_matrix(np.eye(self.pointsInTime)))
-        batIncid_Psd = sparse.kron(sparse.csr_matrix(np.eye(len(self.batEfficiencies.T)) * 1/self.batEfficiencies),
-                                   sparse.csr_matrix(np.eye(self.pointsInTime)))
+        batIncid_Psc = sparse.kron(sparse.csr_matrix(np.eye(len(self.batEfficiencies.T)) * self.batEfficiencies), sparse.csr_matrix(np.eye(self.pointsInTime)))
+        batIncid_Psd = sparse.kron(sparse.csr_matrix(np.eye(len(self.batEfficiencies.T)) * 1/self.batEfficiencies), sparse.csr_matrix(np.eye(self.pointsInTime)))
 
         # Energy Balance Equations
         # Aeq2_auxP:
@@ -510,19 +410,18 @@ class SLP_dispatch:
         # rows:    n*PointsInTime (only nodes with storage connected)
         Aeq2_auxP = sparse.hstack((-batIncid_Psc,
                                    batIncid_Psd))
-        Aeq2_auxP = sparse.vstack((Aeq2_auxP,
-                                  sparse.csr_matrix(np.zeros((self.numBatteries, Aeq2_auxP.get_shape()[1])))))
+        Aeq2_auxP = sparse.vstack((Aeq2_auxP, sparse.csr_matrix(np.zeros((self.numBatteries, Aeq2_auxP.get_shape()[1])))))
 
         # Aeq2_auxE:
         # columns: EBt1,EBtf
         # rows:    (PointsInTime + 1)*numBatteries
         Aeq2_auxE = np.eye((self.pointsInTime + 1) * self.numBatteries)
         for i in range(self.numBatteries):
-            init = i * self.pointsInTime
-            endit = i * self.pointsInTime + self.pointsInTime
+            init = i*self.pointsInTime
+            endit = i*self.pointsInTime + self.pointsInTime
             Aeq2_auxE[init:endit, init:endit] = Aeq2_auxE[init:endit, init:endit] - np.eye(self.pointsInTime, k=-1)
-        idx_E = [self.pointsInTime * self.numBatteries, self.pointsInTime * self.numBatteries]
-        idx_E0 = [self.pointsInTime * self.numBatteries, (self.pointsInTime + 1) * self.numBatteries]
+        idx_E = [self.pointsInTime*self.numBatteries, self.pointsInTime*self.numBatteries]
+        idx_E0 = [self.pointsInTime*self.numBatteries, (self.pointsInTime + 1)*self.numBatteries]
         Aeq2_auxE0 = np.zeros((self.pointsInTime * self.numBatteries, self.numBatteries))
         c = 0
         s = np.sum(Aeq2_auxE[:idx_E[0], :idx_E[1]], 1)
@@ -530,7 +429,7 @@ class SLP_dispatch:
             if s[i] == 1:
                 Aeq2_auxE0[i, c] = -1
                 c += 1
-        Aeq2_auxE[:idx_E0[0], idx_E0[0]:idx_E0[1] + 1] = Aeq2_auxE0
+        Aeq2_auxE[:idx_E0[0], idx_E0[0]:idx_E0[1]+1] = Aeq2_auxE0
         return Aeq2_auxP, Aeq2_auxE, Aeq2_auxE0
 
     def __linprog(self, f, Aeq, beq, A, b, lb, ub):

@@ -193,10 +193,10 @@ def schedulingDriver(iterName, outDSS, initParams):
     Pjk_0 = outDSS['initPjks']
     Pjk_lim = outDSS['limPjks']
     # debug  #
-    Lmaxi = 2000 * np.ones((len(Pjk_lim.index), 1))
-    Lmax = np.kron(Lmaxi, np.ones((1, len(Pjk_lim.columns))))
-    Lmax = pd.DataFrame(Lmax, index=Pjk_lim.index, columns=Pjk_lim.columns)
-    outDSS['limPjks'] = Lmax
+    # Lmaxi = 2000 * np.ones((len(Pjk_lim.index), 1))
+    # Lmax = np.kron(Lmaxi, np.ones((1, len(Pjk_lim.columns))))
+    # Lmax = pd.DataFrame(Lmax, index=Pjk_lim.index, columns=Pjk_lim.columns)
+    # outDSS['limPjks'] = Lmax
     #  #
     demandProfile = outDSS['dfDemand']
     demandProfilei = demandProfile.any(axis=1)
@@ -207,7 +207,7 @@ def schedulingDriver(iterName, outDSS, initParams):
     # define flags
     flags = dict()
     flags["PF"] = True
-    flags["DR"] = False
+    flags["DR"] = True
     flags["reg"] = True
     if batSize == 0:
         flags["storage"] = False
@@ -275,10 +275,10 @@ def schedulingDriver(iterName, outDSS, initParams):
     # Overall Generation costs:
     cgn = np.reshape(gCost.T, (1, gCost.size), order="F")
     # regulator costs
-    val = 0.01 
-    unitCost = val * np.array([[1, 1, 1, 1, 1, 1, 1]])
+    val = 50
+    unitCost = val * np.array([[1, .3, .3, .3, .3, .3, .3]])
     cctap = np.kron(unitCost, np.ones((1, pointsInTime)))
-    val = 10
+    val = 50
     unitCost = val * np.array([[1, .3, .3, .3, .3, .3, .3]])
     ccap = np.kron(unitCost, np.ones((1, pointsInTime + 1)))
     # create dict to store costs
@@ -317,14 +317,14 @@ def schedulingDriver(iterName, outDSS, initParams):
     # Create plot object
     plot_obj = plottingDispatch(iterName, pointsInTime, initParams, PTDF=PTDF)
     # extract dispatch results
-    Pg, Pdr, Pij, Pchar, Pdis, E, deltaT, R = plot_obj.extractResults(x, flags, batt)
+    Pg, Pdr, Pij, Pchar, Pdis, E, Tn, Tp = plot_obj.extractResults(x, flags, batt)
     # extract LMP results
-    LMP, _, _, _, _, _ = plot_obj.extractLMP(LMP, flags, batt)
+    LMP = plot_obj.extractLMP(LMP, flags, batt)
     #
     # OUTPUT
     #
     outES = dict()
-    outES['R'] = pd.DataFrame(R, index=dvdr.columns, columns=v_0.columns)
+    outES['R'] = pd.DataFrame(Tp - Tn, index=dvdr.columns, columns=v_0.columns)
     outES['LMP'] = pd.DataFrame(LMP[lnodes, :], np.asarray(PTDF.columns[lnodes]), v_0.columns)
 
     if flags["DR"]:

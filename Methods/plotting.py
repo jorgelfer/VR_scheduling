@@ -317,56 +317,56 @@ class plottingDispatch:
         if flags["DR"] and not flags["storage"]:
             LMP_Pg = np.reshape(LMP[:n * PointsInTime],
                                 (PointsInTime, n), order='F').T
-            LMP_Pdr = np.reshape(LMP[n * PointsInTime:2 * n * PointsInTime],
-                                 (PointsInTime, n), order='F').T
-            if self.jk:
-                LMP_Pij = np.reshape(LMP[2 * n * PointsInTime:(2 * n + m) * PointsInTime],
-                                     (PointsInTime, m), order='F').T
-            else:
-                LMP_Pij = None
-            LMP_Pchar = None
-            LMP_Pdis = None
-            LMP_E = None
+            # LMP_Pdr = np.reshape(LMP[n * PointsInTime:2 * n * PointsInTime],
+            #                      (PointsInTime, n), order='F').T
+            # if self.jk:
+            #     LMP_Pij = np.reshape(LMP[2 * n * PointsInTime:(2 * n + m) * PointsInTime],
+            #                          (PointsInTime, m), order='F').T
+            # else:
+            #     LMP_Pij = None
+            # LMP_Pchar = None
+            # LMP_Pdis = None
+            # LMP_E = None
 
         elif flags["DR"] and flags["storage"]:
             LMP_Pg = np.reshape(LMP[:n * PointsInTime],
                                 (PointsInTime, n), order='F').T
-            LMP_Pdr = np.reshape(LMP[n * PointsInTime:2 * n * PointsInTime],
-                                 (PointsInTime, n), order='F').T
-            if self.jk:
-                LMP_Pij = np.reshape(LMP[2 * n * PointsInTime:(2 * n + m) * PointsInTime],
-                                     (PointsInTime, m), order='F').T
-            else:
-                LMP_Pij = None
-            LMP_Pchar = np.reshape(LMP[(2 * n + m) * PointsInTime:(2 * n + m) * PointsInTime + numBatteries * PointsInTime],
-                                   (PointsInTime, numBatteries), order='F').T
-            LMP_Pdis = np.reshape(LMP[(2 * n + m + numBatteries) * PointsInTime:(2 * n + m + 2 * numBatteries) * PointsInTime],
-                                  (PointsInTime, numBatteries), order='F').T
-            LMP_E = np.reshape(LMP[(2 * n + m + 2 * numBatteries) * PointsInTime:-numBatteries],
-                               (PointsInTime, numBatteries), order='F').T
+            # LMP_Pdr = np.reshape(LMP[n * PointsInTime:2 * n * PointsInTime],
+            #                      (PointsInTime, n), order='F').T
+            # if self.jk:
+            #     LMP_Pij = np.reshape(LMP[2 * n * PointsInTime:(2 * n + m) * PointsInTime],
+            #                          (PointsInTime, m), order='F').T
+            # else:
+            #     LMP_Pij = None
+            # LMP_Pchar = np.reshape(LMP[(2 * n + m) * PointsInTime:(2 * n + m) * PointsInTime + numBatteries * PointsInTime],
+            #                        (PointsInTime, numBatteries), order='F').T
+            # LMP_Pdis = np.reshape(LMP[(2 * n + m + numBatteries) * PointsInTime:(2 * n + m + 2 * numBatteries) * PointsInTime],
+            #                       (PointsInTime, numBatteries), order='F').T
+            # LMP_E = np.reshape(LMP[(2 * n + m + 2 * numBatteries) * PointsInTime:-numBatteries],
+            #                    (PointsInTime, numBatteries), order='F').T
                 
         elif flags["storage"] and not flags["DR"]:
             LMP_Pg    = np.reshape(LMP[:n*PointsInTime], (PointsInTime,n), order='F').T
-            LMP_Pdr   = None
-            if self.jk:
-                LMP_Pij   = np.reshape(LMP[n*PointsInTime:(n+m)*PointsInTime], (PointsInTime, m), order='F').T
-            else:
-                LMP_Pij = None
-            LMP_Pchar = np.reshape(LMP[(n+m)*PointsInTime:(n+m)*PointsInTime + numBatteries*PointsInTime] , (PointsInTime,numBatteries), order='F').T
-            LMP_Pdis  = np.reshape(LMP[(n+m+numBatteries)*PointsInTime:(n+m+2*numBatteries)*PointsInTime], (PointsInTime,numBatteries), order='F').T
-            LMP_E     = np.reshape(LMP[(n+m+2*numBatteries)*PointsInTime:-numBatteries], (PointsInTime,numBatteries), order='F').T
+            # LMP_Pdr   = None
+            # if self.jk:
+            #     LMP_Pij   = np.reshape(LMP[n*PointsInTime:(n+m)*PointsInTime], (PointsInTime, m), order='F').T
+            # else:
+            #     LMP_Pij = None
+            # LMP_Pchar = np.reshape(LMP[(n+m)*PointsInTime:(n+m)*PointsInTime + numBatteries*PointsInTime] , (PointsInTime,numBatteries), order='F').T
+            # LMP_Pdis  = np.reshape(LMP[(n+m+numBatteries)*PointsInTime:(n+m+2*numBatteries)*PointsInTime], (PointsInTime,numBatteries), order='F').T
+            # LMP_E     = np.reshape(LMP[(n+m+2*numBatteries)*PointsInTime:-numBatteries], (PointsInTime,numBatteries), order='F').T
         else:
             LMP_Pg    = np.reshape(LMP[:n*PointsInTime], (PointsInTime,n), order='F').T
-            LMP_Pdr   = None
-            if self.jk:
-                LMP_Pij   = np.reshape(LMP[n*PointsInTime:(n+m)*PointsInTime], (PointsInTime, m), order='F').T
-            else:
-                LMP_Pij = None
-            LMP_Pchar = None
-            LMP_Pdis  = None
-            LMP_E     = None
+            # LMP_Pdr   = None
+            # if self.jk:
+            #     LMP_Pij   = np.reshape(LMP[n*PointsInTime:(n+m)*PointsInTime], (PointsInTime, m), order='F').T
+            # else:
+            #     LMP_Pij = None
+            # LMP_Pchar = None
+            # LMP_Pdis  = None
+            # LMP_E     = None
 
-        return LMP_Pg, LMP_Pdr, LMP_Pij, LMP_Pchar, LMP_Pdis, LMP_E
+        return LMP_Pg  # , LMP_Pdr, LMP_Pij, LMP_Pchar, LMP_Pdis, LMP_E
 
     def extractResults(self, x, flags, batt):
         n = self.n
@@ -377,7 +377,6 @@ class plottingDispatch:
         if flags["DR"] and not flags["storage"]:
             Pg = np.reshape(x.X[:n*PointsInTime], (PointsInTime,n), order='F').T
             Pdr = np.reshape(x.X[n*PointsInTime:2*n*PointsInTime], (PointsInTime, n), order='F').T
-            R = np.reshape(x.X[2*n*PointsInTime:], (PointsInTime, 7), order='F').T
             if self.jk:
                 Pij   = np.reshape(x.X[2*n*PointsInTime:(2*n+m)*PointsInTime], (PointsInTime, m), order='F').T
             else:
@@ -385,6 +384,8 @@ class plottingDispatch:
             Pchar = 0
             Pdis = 0
             E = 0
+            Rn = np.reshape(x.X[(2*n+m)*PointsInTime:(2*n+m)*PointsInTime + 7 *PointsInTime] , (PointsInTime, 7), order='F').T
+            Rp = np.reshape(x.X[(2*n+m+7)*PointsInTime:(2*n+m+2*7)*PointsInTime] , (PointsInTime, 7), order='F').T
             
         elif flags["DR"] and flags["storage"]:
             Pg    = np.reshape(x.X[:n*PointsInTime], (PointsInTime,n), order='F').T
@@ -395,7 +396,9 @@ class plottingDispatch:
                 Pij = 0
             Pchar = np.reshape(x.X[(2*n+m)*PointsInTime:(2*n+m)*PointsInTime + numBatteries*PointsInTime] , (PointsInTime,numBatteries), order='F').T
             Pdis = np.reshape(x.X[(2*n+m+numBatteries)*PointsInTime:(2*n+m+2*numBatteries)*PointsInTime], (PointsInTime,numBatteries), order='F').T
-            E = np.reshape(x.X[(2*n+m+2*numBatteries)*PointsInTime:-numBatteries], (PointsInTime,numBatteries), order='F').T
+            E = np.reshape(x.X[(2*n+m+2*numBatteries)*PointsInTime:(2*n+m+3*numBatteries)*PointsInTime], (PointsInTime,numBatteries), order='F').T
+            Rn = np.reshape(x.X[(2*n+m+3*numBatteries)*PointsInTime+numBatteries:(2*n+m+3*numBatteries)*PointsInTime+numBatteries + 7 *PointsInTime] , (PointsInTime, 7), order='F').T
+            Rp = np.reshape(x.X[(2*n+m+3*numBatteries)*PointsInTime+numBatteries + 7 *PointsInTime:] , (PointsInTime, 7), order='F').T
                 
         elif flags["storage"] and not flags["DR"]:
             Pg    = np.reshape(x.X[:n*PointsInTime], (PointsInTime,n), order='F').T
@@ -411,8 +414,9 @@ class plottingDispatch:
             Pg = np.reshape(x.X[:n*PointsInTime], (PointsInTime,n), order='F').T
             Pdr = 0
             # R = np.reshape(x.X[n*PointsInTime:], (PointsInTime, 7), order='F').T
-            R = np.reshape(x.X[(n+m)*PointsInTime:(n+m)*PointsInTime + 7 *PointsInTime] , (PointsInTime, 7), order='F').T
-            Etap = np.reshape(x.X[(n+m+7)*PointsInTime:-7], (PointsInTime, 7), order='F').T
+            Rn = np.reshape(x.X[(n+m)*PointsInTime:(n+m)*PointsInTime + 7 *PointsInTime] , (PointsInTime, 7), order='F').T
+            Rp = np.reshape(x.X[(n+m+7)*PointsInTime:(n+m+2*7)*PointsInTime] , (PointsInTime, 7), order='F').T
+            # Etap = np.reshape(x.X[(n+m+2*7)*PointsInTime:-7], (PointsInTime, 7), order='F').T
             if self.jk:
                 Pij = np.reshape(x.X[n*PointsInTime:(n+m)*PointsInTime], (PointsInTime, m), order='F').T
             else:
@@ -421,4 +425,4 @@ class plottingDispatch:
             Pdis  = 0
             E     = 0
 
-        return Pg, Pdr, Pij, Pchar, Pdis, E, R, Etap
+        return Pg, Pdr, Pij, Pchar, Pdis, E, Rn, Rp

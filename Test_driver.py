@@ -19,7 +19,7 @@ script_path = os.path.dirname(os.path.abspath(__file__))
 initParams = dict()
 initParams["plot"] = "True"  # plotting flag
 initParams["vmin"] = "0.95"  # voltage limits
-initParams["vmax"] = "1.05"
+initParams["vmax"] = "1.03"
 initParams["userDemand"] = "None"
 initParams["freq"] = "H"  # "15min", "30min", "H"
 initParams["dispatchType"] = "SLP"  # "LP"
@@ -33,7 +33,7 @@ t = time.localtime()
 timestamp = time.strftime('%b-%d-%Y_%H%M', t)
 # create directory to store results
 today = time.strftime('%b-%d-%Y', t)
-directory = "Results_ncontrol_" + today
+directory = "Results_nobatnopv_" + today
 output_dir12 = pathlib.Path(script_path).joinpath("outputs", directory)
 
 if not os.path.isdir(output_dir12):
@@ -47,7 +47,7 @@ else:
     os.mkdir(output_dir13)
 # define traverse parameters
 batSizes = [0]
-pvSizes = [150]
+pvSizes = [0]
 loadMults = [1]  # 1 for default loadshape, 11 for real.
 
 # main loop
