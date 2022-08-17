@@ -100,25 +100,24 @@ def getInitDemand(dss, initParams):
     dfDemand = pd.DataFrame(demandProfile)
     dfDemand.index = loadKws.index
     dfDemand.columns = genBeta.index.strftime('%H:%M')
+    
+    if loadMult < 5:  # DSS default load shape
+        dfDemandQ = pd.DataFrame(demandQrofile)
+        dfDemandQ.index = loadKvars.index
+        dfDemandQ.columns = genBeta.index.strftime('%H:%M')
 
-    # get real load
-    #############
-    # realDemand = load_hourlyDemand(scriptPath, len(loadNames), freq)
-    # realDemand = realDemand.T
-    # realDemand = realDemand[:len(loadNames)]
-    # realDemand = loadMult*realDemand
-    # dfDemand.loc[loadNames.index, :] = realDemand.values
-
-    # Reactive Power df
-    # if fixed power factor:
-    # random power factors
-    # np.random.seed(2022)
-    # PF = np.random.uniform(0.85, 1, size=len(dfDemand.index))
-    # dfDemandQ = (np.tan(np.arccos(PF)) * dfDemand.T).T
-    # else:
-    dfDemandQ = pd.DataFrame(demandQrofile)
-    dfDemandQ.index = loadKvars.index
-    dfDemandQ.columns = genBeta.index.strftime('%H:%M')
+    elif loadMult >= 5:  # real demand load shape
+        # get real active power load
+        #############
+        realDemand = load_hourlyDemand(script_path, len(loadNames), freq)
+        realDemand = realDemand.T
+        realDemand = realDemand[:len(loadNames)]
+        realDemand = loadMult * realDemand
+        dfDemand.loc[loadNames.index, :] = realDemand.values
+        # Reactive Power df
+        np.random.seed(2022)
+        PF = np.random.uniform(0.85, 1, size=len(dfDemand.index))
+        dfDemandQ = (np.tan(np.arccos(PF)) * dfDemand.T).T
 
     # correct native load by user demand
     if userDemand != "None":
@@ -130,4 +129,4 @@ def getInitDemand(dss, initParams):
     outDSS["dfDemand"] = dfDemand
     outDSS["dfDemandQ"] = dfDemandQ
 
-    return outDSS 
+    return outDSS

@@ -30,7 +30,7 @@ def scheduling(initParams):
     dss.text(f"Compile [{dss_file}]")
 
     # compute sensitivities for the test case
-    compute = False
+    compute = False 
     if compute:
         computeSensitivity(dss, initParams)
         computeRegSensitivity(dss, initParams)

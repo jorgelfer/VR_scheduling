@@ -76,7 +76,7 @@ def computeSensitivity(dss, initParams):
     dfVS = pd.DataFrame(VS, np.asarray(nodeNames), np.asarray(nodeNames))
     dfVS.to_pickle(pathlib.Path(script_path).joinpath("inputs", case, "VoltageSensitivity.pkl"))
     dfPjk = pd.DataFrame(PTDF_jk, np.asarray(nodeLineNames), np.asarray(nodeNames))
-    dfPjk.to_pickle(pathlib.Path(script_path).joinpath("inputs", case, "PTDF_jk.pkl"))
+    dfPjk.to_pickle(pathlib.Path(script_path).joinpath("inputs", case, "PTDF.pkl"))
 
     if initParams["plot"] == "True":
         h = 20

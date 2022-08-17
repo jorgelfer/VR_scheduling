@@ -73,14 +73,15 @@ def dssDriver(iterName, dss, outDSS, initParams, outES=None):
     # points in time
     pointsInTime = len(dfDemand.columns)
     # prelocation
-    v = np.zeros([len(nodeNames), pointsInTime])
-    vp = np.zeros([len(nodeNames), pointsInTime], dtype=complex)
-    p = np.zeros([len(nodeNames), pointsInTime])
-    q = np.zeros([len(nodeNames), pointsInTime])
-    Pjk = np.zeros([len(nodeLineNames), pointsInTime])
-    Qjk = np.zeros([len(nodeLineNames), pointsInTime])
-    pjk = np.zeros([len(lines), pointsInTime])  # full line flow
-    qjk = np.zeros([len(lines), pointsInTime])  # full line flow
+    v = np.zeros((len(nodeNames), pointsInTime))
+    vp = np.zeros((len(nodeNames), pointsInTime), dtype=complex)
+    p = np.zeros((len(nodeNames), pointsInTime))
+    q = np.zeros((len(nodeNames), pointsInTime))
+    Pjk = np.zeros((len(nodeLineNames), pointsInTime))
+    Qjk = np.zeros((len(nodeLineNames), pointsInTime))
+    pjk = np.zeros((len(lines), pointsInTime))  # full line flow
+    qjk = np.zeros((len(lines), pointsInTime))  # full line flow
+    ckt_losses = np.zeros((pointsInTime, 1))  # full line flow
 
     # main loop for each load mult
     for t, time in enumerate(dfDemand.columns):
@@ -100,6 +101,8 @@ def dssDriver(iterName, dss, outDSS, initParams, outES=None):
         v[:, t], vp[:, t] = sen_obj.voltageProfile()
         # extract line flows
         Pjk[:, t], Qjk[:, t], pjk[:, t], qjk[:, t] = sen_obj.flows(nodeLineNames)
+        # extract lossses
+        ckt_losses[t, 0] = dss.circuit_losses()[0] / 1000  # kw
 
     # define outputs
     dfV = pd.DataFrame(v, index=np.asarray(nodeNames), columns=dfDemand.columns)
@@ -116,6 +119,11 @@ def dssDriver(iterName, dss, outDSS, initParams, outES=None):
     Q_obj = reactiveCorrection(dss, output_dir, iterName)
     Pjklim, Sjklim = Q_obj.compute_correction(dfVp, nodeBaseVoltage, nodeLineNames, dfpjk, dfqjk)
 
+    if outES is not None:
+        cost_wednesday = np.expand_dims(outES['costWednesday'], axis=1)
+        losses_cost = cost_wednesday.T @ ckt_losses
+        outDSS['losses_cost'] = losses_cost
+
     outDSS['initPower'] = dfP
     outDSS['initVolts'] = dfV
     outDSS['initPjks'] = dfPjks
@@ -125,10 +133,13 @@ def dssDriver(iterName, dss, outDSS, initParams, outES=None):
     if initParams["plot"] == "True":
         # plot results
         plot_obj = plottingDispatch(iterName, pointsInTime, initParams)
+        plot_obj.plot_Dispatch(dfP)
         # plot Line Limits
         Linfo = load_lineLimits(scriptPath, case)
         plot_obj.plot_Pjk(dfPjks, Linfo, Pjklim, Sjklim)
         # plot voltage constraints
         plot_obj.plot_voltage(nodeBaseVoltage, dfV, dfDemand.any(axis=1))
+        # plot demand
+        plot_obj.plot_Demand(dfDemand)
 
     return outDSS

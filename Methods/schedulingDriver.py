@@ -9,7 +9,7 @@ import pathlib
 #required for plotting
 import matplotlib.pyplot as plt
 plt.rcParams.update({'font.size': 12})
-from Methods.SLP_dispatch import SLP_dispatch
+from Methods.SLP_dispatch_simp import SLP_dispatch
 from Methods.LP_dispatch import LP_dispatch
 from Methods.plotting import plottingDispatch
 from Methods.loadHelper import loadHelper
@@ -57,7 +57,7 @@ def create_reg(dxdr):
 
 def load_PTDF(script_path, case):
     '''function to load PTDF'''
-    PTDF_file = pathlib.Path(script_path).joinpath("inputs", case, "PTDF_jk.pkl")
+    PTDF_file = pathlib.Path(script_path).joinpath("inputs", case, "PTDF.pkl")
     PTDF = pd.read_pickle(PTDF_file)
     # adjust lossless PTDF
     PTDF = PTDF / 10  # divide by perturbation injection value
@@ -204,11 +204,18 @@ def schedulingDriver(iterName, outDSS, initParams):
     pointsInTime = v_0.shape[1]
     # initially there is no DR
     outDSS["initDR"] = pd.DataFrame(np.zeros(v_0.shape), index=Pg_0.index, columns=Pg_0.columns)
+
+    # ####################
     # define flags
     flags = dict()
     flags["PF"] = True
     flags["DR"] = True
-    flags["reg"] = True
+
+    if initParams["reg"] == 'True':
+        flags["reg"] = True
+    else:
+        flags["reg"] = False
+
     if batSize == 0:
         flags["storage"] = False
     else:
@@ -218,6 +225,7 @@ def schedulingDriver(iterName, outDSS, initParams):
         flags["PV"] = False
     else:
         flags["PV"] = True
+    # ######################
 
     # resource location
     if case == '123bus':
@@ -275,10 +283,10 @@ def schedulingDriver(iterName, outDSS, initParams):
     # Overall Generation costs:
     cgn = np.reshape(gCost.T, (1, gCost.size), order="F")
     # regulator costs
-    val = 50
+    val = 10
     unitCost = val * np.array([[1, .3, .3, .3, .3, .3, .3]])
     cctap = np.kron(unitCost, np.ones((1, pointsInTime)))
-    val = 50
+    val = 10
     unitCost = val * np.array([[1, .3, .3, .3, .3, .3, .3]])
     ccap = np.kron(unitCost, np.ones((1, pointsInTime + 1)))
     # create dict to store costs
@@ -318,14 +326,28 @@ def schedulingDriver(iterName, outDSS, initParams):
     plot_obj = plottingDispatch(iterName, pointsInTime, initParams, PTDF=PTDF)
     # extract dispatch results
     Pg, Pdr, Pij, Pchar, Pdis, E, Tn, Tp = plot_obj.extractResults(x, flags, batt)
+
+    # ###############
+    # DR costs
+    # ###############
+    Pdr_1d = np.reshape(Pdr, np.size(Pdr), order="F")
+    costPdr = cdr @ Pdr_1d.T
+
     # extract LMP results
     LMP = plot_obj.extractLMP(LMP, flags, batt)
     #
     # OUTPUT
     #
     outES = dict()
-    outES['R'] = pd.DataFrame(Tp - Tn, index=dvdr.columns, columns=v_0.columns)
+    outES['costWednesday'] = cost_wednesday
+    outES['J'] = m.objVal
+    outES['DRcost'] = costPdr
     outES['LMP'] = pd.DataFrame(LMP[lnodes, :], np.asarray(PTDF.columns[lnodes]), v_0.columns)
+
+    if flags["reg"]:
+        outES['R'] = pd.DataFrame(Tp - Tn, index=dvdr.columns, columns=v_0.columns)
+    else:
+        outES['R'] = None
 
     if flags["DR"]:
         lnames = [loadNames.loc[n] for n in PTDF.columns[lnodes]]
@@ -335,6 +357,7 @@ def schedulingDriver(iterName, outDSS, initParams):
 
     if flags["PV"]:
         outES['Gen'] = pd.DataFrame(Pg[PVnodes, :], np.asarray(PTDF.columns[PVnodes]), v_0.columns)
+        outES['maxOutput'] = outES['Gen'].max(axis=1)
     else:
         outES['Gen'] = None
     # check storage
@@ -351,8 +374,10 @@ def schedulingDriver(iterName, outDSS, initParams):
             plot_obj.plot_DemandResponse(outES["DR"])
         # plot Dispatch
         dfPg = pd.DataFrame(Pg, PTDF.columns, v_0.columns)
-        plot_obj.plot_Dispatch(dfPg)
-        plot_obj.plot_reg(outES['R'])
+        plot_obj.plot_Dispatch(dfPg.iloc[3:])
+        # plot taps
+        if flags["reg"]:
+            plot_obj.plot_reg(outES['R'])
         # plot Storage
         if flags["storage"]:
             plot_obj.plot_storage(E, batt, gCost[0, :])

@@ -21,9 +21,8 @@ import py_dss_interface
 def set_baseline(dss):
     dss.text("Set Maxiterations=100")
     dss.text("Set controlmode=OFF")
-    
 
-ext = '.png'
+ext = '.pdf'
 plot = True
 h = 6
 w = 4
@@ -35,14 +34,14 @@ t = time.localtime()
 timestamp = time.strftime('%b-%d-%Y_%H%M', t)
 # create directory to store results
 today = time.strftime('%b-%d-%Y', t)
-directory = "Results_Flows" + today
+directory = "Results_linearity_" + today
 output_dir = pathlib.Path(script_path).joinpath("outputs", directory)
 
 if not os.path.isdir(output_dir):
     os.mkdir(output_dir)
-else:
-    shutil.rmtree(output_dir)
-    os.mkdir(output_dir)
+# else:
+#     shutil.rmtree(output_dir)
+#     os.mkdir(output_dir)
 
 # voltage limits
 vmin = 0.95
@@ -81,7 +80,7 @@ outputFile = pathlib.Path(output_dir).joinpath("TapVoltage.npy")
 if not os.path.isfile(outputFile):
     # prelocate
     numTaps = 32
-    numReg = 7
+    numReg = len(regs) 
     volts = np.zeros((len(nodeNames), numTaps + 1, numReg))
     flows = np.zeros((len(nodeLineNames), numTaps + 1, numReg))
     # main loop
@@ -100,7 +99,7 @@ if not os.path.isfile(outputFile):
             dss.text("solve")
             # extract voltage
             volts[:, ntap, r] = sen_obj.voltageMags()
-            # extract flows 
+            # extract flows
             flows[:, ntap, r], _, _, _ = sen_obj.flows(nodeLineNames)
             ntap += 1
 
@@ -122,43 +121,45 @@ for c, cond in enumerate(nodeLineNames):
         os.mkdir(output_dirCond)
 
     for r, reg in enumerate(regs):
+        flowMin = flows[c, :, :].min()
+        flowMax = flows[c, :, :].max()
         # compute pu
         flow = flows[c, :, r]
         # create plot
         plt.clf()
         fig, ax = plt.subplots()  # figsize=(h,w)
-        tapRange = np.arange(0.9, 1.1, 0.00625)
+        tapRange = np.arange(-16, 17, 1)
         plt.plot(tapRange, flow)
-        plt.xlim(0.89, 1.11)
+        plt.ylim(0.99 * flowMin, 1.01 * flowMax)
         plt.title(f"{cond}_{reg}")
         fig.tight_layout()
-        output_img = pathlib.Path(output_dirCond).joinpath(f"flow_{cond}_{reg}.png")
+        output_img = pathlib.Path(output_dirCond).joinpath(f"flow_{cond}_{reg}" + ext)
         plt.savefig(output_img)
         plt.close('all')
 
 # voltages
-# for n, node in enumerate(nodeNames):
-    # print(f"{node}")
-    # # create a new directory for each nod
-    # output_dirNode = pathlib.Path(output_dir).joinpath(f"{node}")
-    # if not os.path.isdir(output_dirNode):
-        # os.mkdir(output_dirNode)
-
-    # for r, reg in enumerate(regs):
-        # # compute pu
-        # vpu = volts[n, :, r] / (1000*nodeBaseVolts[n])
-        # vpu = np.expand_dims(vpu, axis=1)
-        # vmin_vec = vmin * np.zeros((len(vpu), 1))
-        # vmax_vec = vmax * np.zeros((len(vpu), 1))
-        # concat = np.hstack((vpu, vmin_vec, vmax_vec))
-        # # create plot
-        # plt.clf()
-        # fig, ax = plt.subplots()  # figsize=(h,w)
-        # tapRange = np.arange(0.9, 1.1, 0.00625)
-        # plt.plot(tapRange, concat)
-        # plt.ylim(0.99*vmin, 1.01*vmax)
-        # plt.title(f"{node}_{reg}")
-        # fig.tight_layout()
-        # output_img = pathlib.Path(output_dirNode).joinpath(f"voltage_{node}_{reg}.png")
-        # plt.savefig(output_img)
-        # plt.close('all')
+for n, node in enumerate(nodeNames):
+    print(f"{node}")
+    # create a new directory for each nod
+    output_dirNode = pathlib.Path(output_dir).joinpath(f"{node}")
+    if not os.path.isdir(output_dirNode):
+        os.mkdir(output_dirNode)
+    # main loop
+    for r, reg in enumerate(regs):
+        # compute pu
+        vpu = volts[n, :, r] / (1000 * nodeBaseVolts[n])
+        vpu = np.expand_dims(vpu, axis=1)
+        vmin_vec = vmin * np.zeros((len(vpu), 1))
+        vmax_vec = vmax * np.zeros((len(vpu), 1))
+        concat = np.hstack((vpu, vmin_vec, vmax_vec))
+        # create plot
+        plt.clf()
+        fig, ax = plt.subplots()  # figsize=(h,w)
+        tapRange = np.arange(-16, 17, 1)
+        plt.plot(tapRange, concat)
+        plt.ylim(0.99 * vmin, 1.01 * vmax)
+        plt.title(f"{node}_{reg}")
+        fig.tight_layout()
+        output_img = pathlib.Path(output_dirNode).joinpath(f"voltage_{node}_{reg}" + ext)
+        plt.savefig(output_img)
+        plt.close('all')

@@ -25,7 +25,6 @@ def computeRegSensitivity(dss, initParams):
     # initial DSS execution
     dss.text(f"Compile [{dss_file}]")
     set_baseline(dss)
-    dss.text("solve")
     # create a sensitivity object
     sen_obj = sensitivityPy(dss, time=0)
     # get all node-based base volts
@@ -34,10 +33,6 @@ def computeRegSensitivity(dss, initParams):
     nodeNames = dss.circuit_all_node_names()
     # get all node-based lines names
     nodeLineNames, lines = sen_obj.get_nodeLineNames()
-    # get base voltage
-    baseVolts = sen_obj.voltageMags()
-    # get base pjk
-    basePjk, _, _, _ = sen_obj.flows(nodeLineNames)
     # list DSS regulators
     trafos = dss.transformers_all_Names()
     regs = [tr for tr in trafos if "reg" in tr]
@@ -46,21 +41,36 @@ def computeRegSensitivity(dss, initParams):
     dV = np.zeros([len(nodeNames), len(regs)])
     # main loop through all regs
     for r, reg in enumerate(regs):
+        # Excecution from init value
         # fresh compilation: to remove previous modifications
         dss.text(f"Compile [{dss_file}]")
         set_baseline(dss)
         # create a sensitivity object
         sen_obj = sensitivityPy(dss, time=0)
         # Perturb DSS with tap change
-        sen_obj.perturbRegDSS(reg, 1.0 + 0.00625)  # +1 tap
+        sen_obj.perturbRegDSS(reg, 1.0 + 0.00625 * (-16))  # +1 tap
+        # solve dss file
+        dss.text("solve")
+        # get base voltage
+        baseVolts = sen_obj.voltageMags()
+        # get base pjk
+        basePjk, _, _, _ = sen_obj.flows(nodeLineNames)
+
+        # Excecution from final value
+        dss.text(f"Compile [{dss_file}]")
+        set_baseline(dss)
+        # create a sensitivity object
+        sen_obj = sensitivityPy(dss, time=0)
+        # Perturb DSS with tap change
+        sen_obj.perturbRegDSS(reg, 1.0 + 0.00625 * (16))  # +1 tap
         # solve dss file
         dss.text("solve")
         # compute Voltage sensitivity
         currVolts = sen_obj.voltageMags()
-        dV[:, r] = currVolts - baseVolts
+        dV[:, r] = (currVolts - baseVolts) / 33
         # compute PTDF
         currPjk, _, _, _ = sen_obj.flows(nodeLineNames)
-        dPjk[:, r] = currPjk - basePjk
+        dPjk[:, r] = (currPjk - basePjk) / 33 
 
     # save
     dfV = pd.DataFrame(dV, np.asarray(nodeNames), np.asarray(regs))

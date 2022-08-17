@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 h = 6 
 w = 4 
-ext = '.png'
+ext = '.pdf'
 
 
 class plottingDispatch:
@@ -27,7 +27,7 @@ class plottingDispatch:
                 self.m = 0
 
         # define if include title
-        self.title = True
+        self.title = False 
         # name of stage iteration
         self.niter = niter
         self.PointsInTime = PointsInTime
@@ -101,8 +101,8 @@ class plottingDispatch:
         cont = 0
         for ni, na in zip(nil, namel):
             # if True:
-            if np.any(Pij.values[cont:cont + ni, :] > lmax.values[cont:cont + ni, :]):
-                # if na == "Line.l3" or na == "Line.l7" or na == "Line.l10":
+            # if np.any(Pij.values[cont:cont + ni, :] > lmax.values[cont:cont + ni, :]):
+            if na == "Line.l115":
                 # if na == "Line.650632":
                 plt.clf()
                 fig, ax = plt.subplots(figsize=(h, w))
@@ -139,14 +139,13 @@ class plottingDispatch:
         # ####################
         # ##   Demand  ## 
         # ####################
-        totalDemand =  DemandProfile.sum(axis = 0).to_frame()
+        totalDemand =  DemandProfile.sum(axis=0).to_frame()
         
         # index = np.where(DemandProfilei) 
         plt.clf()
         fig, ax = plt.subplots(figsize=(h,w))
         
-        totalDemand.T.plot(style='o--', color = 'grey', alpha=0.3)
-        totalDemand.T.step()
+        totalDemand.plot()
         
         if self.title:
             ax.set_title('Demand profile')
@@ -154,7 +153,7 @@ class plottingDispatch:
             plt.xlabel('Time (hrs)')
         
         fig.tight_layout()
-        output_img = pathlib.Path(self.output_dir).joinpath("Demand_profile_{self.timestamp}"+ ext)
+        output_img = pathlib.Path(self.output_dir).joinpath(f"Demand_profile_{self.timestamp}"+ ext)
         plt.savefig(output_img)
         plt.close('all')
 
@@ -165,7 +164,7 @@ class plottingDispatch:
         #######################
         plt.clf()
         fig, ax = plt.subplots(figsize=(h, w))
-        R.T.plot()  # use any to plot dispatched nodes
+        R.round().T.plot(drawstyle="steps-post", linewidth=2, legend=False)  # use any to plot dispatched nodes
         if self.title:
             ax.set_title('Regulators taps [-16, 16]', fontsize=15)
             plt.ylabel('tap', fontsize=12)
@@ -193,24 +192,25 @@ class plottingDispatch:
         plt.clf()
         fig, ax = plt.subplots(figsize=(h, w))
         Pg = Pg[Pg.any(axis=1)]
-        Pg.T.plot(legend=False)  # use any to plot dispatched nodes
-        if self.title:
-            ax.set_title(f'Power substation - peak = {np.sum(np.max(Pg,0))}', fontsize=15)
-            plt.ylabel('Power (kW)', fontsize=12)
-            plt.xlabel('Time (hrs)', fontsize=12)
-        fig.tight_layout()
-
-        output_dirDispatch = pathlib.Path(self.output_dir).joinpath("Dispatch")
-        if not os.path.isdir(output_dirDispatch):
-            os.mkdir(output_dirDispatch)
-
-        output_img = pathlib.Path(self.output_dir).joinpath(f"Power_Dispatch_{self.niter}_{self.timestamp}" + ext)
-        plt.savefig(output_img)
-        plt.close('all')
-
-        # save as pkl as well
-        output_pkl = pathlib.Path(output_dirDispatch).joinpath(f"Power_Dispatch_{self.niter}_{self.timestamp}.pkl")
-        Pg.to_pickle(output_pkl)
+        if Pg.shape[0] != 0:
+            Pg.T.plot()  # use any to plot dispatched nodes
+            if self.title:
+                ax.set_title(f'Power substation - peak = {np.sum(np.max(Pg,0))}', fontsize=15)
+                plt.ylabel('Power (kW)', fontsize=12)
+                plt.xlabel('Time (hrs)', fontsize=12)
+            fig.tight_layout()
+    
+            output_dirDispatch = pathlib.Path(self.output_dir).joinpath("Dispatch")
+            if not os.path.isdir(output_dirDispatch):
+                os.mkdir(output_dirDispatch)
+    
+            output_img = pathlib.Path(self.output_dir).joinpath(f"Power_Dispatch_{self.niter}_{self.timestamp}" + ext)
+            plt.savefig(output_img)
+            plt.close('all')
+    
+            # save as pkl as well
+            output_pkl = pathlib.Path(output_dirDispatch).joinpath(f"Power_Dispatch_{self.niter}_{self.timestamp}.pkl")
+            Pg.to_pickle(output_pkl)
 
     def plot_DemandResponse(self, Pdr):
 
@@ -220,26 +220,26 @@ class plottingDispatch:
     
         plt.clf()
         fig, ax = plt.subplots(figsize=(h,w))
-        legendi = Pdr[Pdr.any(axis=1)].index.tolist() # use any to plot dispatched nodes
-        Pdr.T.plot(ylim=(0,200),legend=False)
-        ax.legend(legendi, prop={'size': 10})
+        Pdr = Pdr[Pdr.any(axis=1)] # use any to plot dispatched nodes
+        Pdr.T.plot()
         
-        if self.title:
-            ax.set_title(f'Demand Response - total {round(np.sum(Pdr),3)}', fontsize=15)
-            plt.ylabel('Power (kW)', fontsize=15)
-            plt.xlabel('Time (hrs)', fontsize=15)
-
-        output_dirDR = pathlib.Path(self.output_dir).joinpath("DR")
-        if not os.path.isdir(output_dirDR):
-            os.mkdir(output_dirDR)
-
-        output_img = pathlib.Path(self.output_dir).joinpath(f"DemandResponse_{self.niter}_{self.timestamp}"+ ext)
-        plt.savefig(output_img)
-        plt.close('all')
-
-        # save as pkl as well
-        output_pkl = pathlib.Path(output_dirDR).joinpath(f"DemandResponse_{self.niter}_{self.timestamp}.pkl")
-        Pdr.to_pickle(output_pkl)
+        if Pdr.shape[0] != 0:
+            if self.title:
+                ax.set_title(f'Demand Response - total {round(np.sum(Pdr),3)}', fontsize=15)
+                plt.ylabel('Power (kW)', fontsize=15)
+                plt.xlabel('Time (hrs)', fontsize=15)
+    
+            output_dirDR = pathlib.Path(self.output_dir).joinpath("DR")
+            if not os.path.isdir(output_dirDR):
+                os.mkdir(output_dirDR)
+    
+            output_img = pathlib.Path(self.output_dir).joinpath(f"DemandResponse_{self.niter}_{self.timestamp}"+ ext)
+            plt.savefig(output_img)
+            plt.close('all')
+    
+            # save as pkl as well
+            output_pkl = pathlib.Path(output_dirDR).joinpath(f"DemandResponse_{self.niter}_{self.timestamp}.pkl")
+            Pdr.to_pickle(output_pkl)
 
     def plot_storage(self, E, batt, cgn):
 
@@ -259,7 +259,7 @@ class plottingDispatch:
             ax1.set_title(f'Prices vs static battery charging_{self.niter}', fontsize=15)
             ax1.set_ylabel('Energy Storage (kWh)', fontsize=15)
             ax1.set_xlabel('Time (hrs)', fontsize=15)
-        plt.legend(leg) 
+        # plt.legend(leg) 
     
         ax2 = ax1.twinx() # instantiate a second axes that shares the same x-axis
         color = 'tab:purple'
@@ -374,7 +374,34 @@ class plottingDispatch:
         PointsInTime = self.PointsInTime
         numBatteries = batt['numBatteries']
         # Extract solution
-        if flags["DR"] and not flags["storage"]:
+        if flags["DR"] and not flags["storage"] and not flags["reg"]:
+            Pg = np.reshape(x.X[:n*PointsInTime], (PointsInTime,n), order='F').T
+            Pdr = np.reshape(x.X[n*PointsInTime:2*n*PointsInTime], (PointsInTime, n), order='F').T
+            if self.jk:
+                Pij   = np.reshape(x.X[2*n*PointsInTime:(2*n+m)*PointsInTime], (PointsInTime, m), order='F').T
+            else:
+                Pij = 0
+            Pchar = 0
+            Pdis = 0
+            E = 0
+            Rn = 0
+            Rp = 0
+            # Etap = np.reshape(x.X[(2*n+m+2*7)*PointsInTime:-7], (PointsInTime, 7), order='F').T
+            
+        elif flags["DR"] and flags["storage"] and not flags["reg"]:
+            Pg    = np.reshape(x.X[:n*PointsInTime], (PointsInTime,n), order='F').T
+            Pdr   = np.reshape(x.X[n*PointsInTime:2*n*PointsInTime], (PointsInTime,n), order='F').T;
+            if self.jk:
+                Pij   = np.reshape(x.X[2*n*PointsInTime:(2*n+m)*PointsInTime], (PointsInTime, m), order='F').T
+            else:
+                Pij = 0
+            Pchar = np.reshape(x.X[(2*n+m)*PointsInTime:(2*n+m)*PointsInTime + numBatteries*PointsInTime] , (PointsInTime,numBatteries), order='F').T
+            Pdis = np.reshape(x.X[(2*n+m+numBatteries)*PointsInTime:(2*n+m+2*numBatteries)*PointsInTime], (PointsInTime,numBatteries), order='F').T
+            E = np.reshape(x.X[(2*n+m+2*numBatteries)*PointsInTime:(2*n+m+3*numBatteries)*PointsInTime], (PointsInTime,numBatteries), order='F').T
+            Rn = 0
+            Rp = 0
+        
+        elif flags["DR"] and not flags["storage"] and flags["reg"]:
             Pg = np.reshape(x.X[:n*PointsInTime], (PointsInTime,n), order='F').T
             Pdr = np.reshape(x.X[n*PointsInTime:2*n*PointsInTime], (PointsInTime, n), order='F').T
             if self.jk:
@@ -386,8 +413,9 @@ class plottingDispatch:
             E = 0
             Rn = np.reshape(x.X[(2*n+m)*PointsInTime:(2*n+m)*PointsInTime + 7 *PointsInTime] , (PointsInTime, 7), order='F').T
             Rp = np.reshape(x.X[(2*n+m+7)*PointsInTime:(2*n+m+2*7)*PointsInTime] , (PointsInTime, 7), order='F').T
-            
-        elif flags["DR"] and flags["storage"]:
+            # Etap = np.reshape(x.X[(2*n+m+2*7)*PointsInTime:-7], (PointsInTime, 7), order='F').T
+
+        elif flags["DR"] and flags["storage"] and flags["reg"]:
             Pg    = np.reshape(x.X[:n*PointsInTime], (PointsInTime,n), order='F').T
             Pdr   = np.reshape(x.X[n*PointsInTime:2*n*PointsInTime], (PointsInTime,n), order='F').T;
             if self.jk:
@@ -400,7 +428,7 @@ class plottingDispatch:
             Rn = np.reshape(x.X[(2*n+m+3*numBatteries)*PointsInTime+numBatteries:(2*n+m+3*numBatteries)*PointsInTime+numBatteries + 7 *PointsInTime] , (PointsInTime, 7), order='F').T
             Rp = np.reshape(x.X[(2*n+m+3*numBatteries)*PointsInTime+numBatteries + 7 *PointsInTime:] , (PointsInTime, 7), order='F').T
                 
-        elif flags["storage"] and not flags["DR"]:
+        elif not flags["DR"] and flags["storage"] and flags["reg"]:
             Pg    = np.reshape(x.X[:n*PointsInTime], (PointsInTime,n), order='F').T
             Pdr   = 0
             if self.jk:
@@ -409,8 +437,11 @@ class plottingDispatch:
                 Pij = 0
             Pchar = np.reshape(x.X[(n+m)*PointsInTime:(n+m)*PointsInTime + numBatteries*PointsInTime] , (PointsInTime,numBatteries), order='F').T
             Pdis  = np.reshape(x.X[(n+m+numBatteries)*PointsInTime:(n+m+2*numBatteries)*PointsInTime], (PointsInTime,numBatteries), order='F').T
-            E     = np.reshape(x.X[(n+m+2*numBatteries)*PointsInTime:-numBatteries], (PointsInTime,numBatteries), order='F').T
-        else:
+            E     = np.reshape(x.X[(n+m+2*numBatteries)*PointsInTime:(2*n+m+3*numBatteries)*PointsInTime], (PointsInTime,numBatteries), order='F').T
+            Rn = np.reshape(x.X[(2*n+m+3*numBatteries)*PointsInTime+numBatteries:(2*n+m+3*numBatteries)*PointsInTime+numBatteries + 7 *PointsInTime] , (PointsInTime, 7), order='F').T
+            Rp = np.reshape(x.X[(2*n+m+3*numBatteries)*PointsInTime+numBatteries + 7 *PointsInTime:] , (PointsInTime, 7), order='F').T
+
+        elif not flags["DR"] and not flags["storage"] and flags["reg"]:
             Pg = np.reshape(x.X[:n*PointsInTime], (PointsInTime,n), order='F').T
             Pdr = 0
             # R = np.reshape(x.X[n*PointsInTime:], (PointsInTime, 7), order='F').T
@@ -422,7 +453,7 @@ class plottingDispatch:
             else:
                 Pij = 0
             Pchar = 0
-            Pdis  = 0
-            E     = 0
+            Pdis = 0
+            E = 0
 
         return Pg, Pdr, Pij, Pchar, Pdis, E, Rn, Rp

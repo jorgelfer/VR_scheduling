@@ -34,6 +34,7 @@ class SLP_dispatch:
         self.ipf = ipf.to_frame()
 
         # correct the PTDF by the penalty factor
+
         PTDF = self.ipf.values.T * sen["PTDF"].values
         self.PTDF = pd.DataFrame(PTDF, index=sen["PTDF"].index, columns=sen["PTDF"].columns)
         
@@ -325,7 +326,7 @@ class SLP_dispatch:
                               tapInit.T, np.zeros((self.numRegs, 1))), 0)
 
         # add reg portion to lower bounds
-        changeTap = 3 * np.ones((1, self.numRegs))
+        changeTap = 4 * np.ones((1, self.numRegs))
         regMaxTap = 32 * np.ones((1, self.numRegs))
 
         lb = np.concatenate((lb.T,     # Generation limits

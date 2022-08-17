@@ -212,7 +212,8 @@ class SLP_dispatch:
         # Aeq matrix to this moment
         # columns: Pnt1,Pntf-Pdrt1,Pdrtf-PscBt1,PscBtf-PsdBt1,PsdBtf-EBt1,EBtf
         # rows:    (n+l)*PointsInTime + (2 + PointsInTime)*numBatteries
-        Aeq_reg = sparse.csr_matrix(np.zeros((Aeq.get_shape()[0], 2 * self.numRegs * self.pointsInTime)))
+        Aeq_reg = sparse.csr_matrix(np.zeros((Aeq.get_shape()[0],
+                                             2 * self.numRegs * self.pointsInTime)))
         Aeq_new = sparse.hstack((Aeq, Aeq_reg))
 
         # Inequalities

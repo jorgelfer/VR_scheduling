@@ -26,12 +26,10 @@ def set_baseline(dss):
     
 
 def plot_sensi(dfVolts, dfFlows, cond, path, dV_min, dV_max, dPjk_min, dPjk_max):
-    h = 20
-    w = 20
-    ext = '.png'
+    ext = '.pdf'
     # VoltageSensitivity
     plt.clf()
-    fig, ax = plt.subplots(figsize=(h, w))
+    fig, ax = plt.subplots()
     ax = sns.heatmap(dfVolts, annot=False, vmin=dV_min, vmax=dV_max)
     fig.tight_layout()
     output_img = pathlib.Path(path).joinpath("VoltageSensitivity_" + cond + ext)
@@ -39,7 +37,7 @@ def plot_sensi(dfVolts, dfFlows, cond, path, dV_min, dV_max, dPjk_min, dPjk_max)
     plt.close('all')
     # PTDF
     plt.clf()
-    fig, ax = plt.subplots(figsize=(h, w))
+    fig, ax = plt.subplots()
     ax = sns.heatmap(dfFlows, annot=False, vmin=dPjk_min, vmax=dPjk_max)
     fig.tight_layout()
     output_img = pathlib.Path(path).joinpath("PTDF_" + cond + ext)
@@ -112,6 +110,8 @@ dPjkdR = pd.read_pickle(pathlib.Path(script_path).joinpath("inputs", dssCase, "F
 dVdP_path = pathlib.Path(script_path).joinpath("inputs", dssCase, "VoltageSensitivity.pkl")
 dPjkdP_path = pathlib.Path(script_path).joinpath("inputs", dssCase, "PTDF.pkl")
 
+# losses
+ckt_losses = dss.circuit_losses()
 if not os.path.isfile(dVdP_path) or not os.path.isfile(dPjkdP_path):
     # prelocate
     dPjkdP_a = np.zeros([len(nodeLineNames), len(nodeNames)])
