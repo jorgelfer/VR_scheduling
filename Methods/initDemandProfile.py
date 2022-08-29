@@ -116,7 +116,7 @@ def getInitDemand(dss, initParams):
         dfDemand.loc[loadNames.index, :] = realDemand.values
         # Reactive Power df
         np.random.seed(2022)
-        PF = np.random.uniform(0.85, 1, size=len(dfDemand.index))
+        PF = 0.9 #np.random.uniform(0.85, 1, size=len(dfDemand.index))
         dfDemandQ = (np.tan(np.arccos(PF)) * dfDemand.T).T
 
     # correct native load by user demand

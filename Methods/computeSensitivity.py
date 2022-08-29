@@ -26,6 +26,7 @@ def computeSensitivity(dss, initParams):
     script_path = initParams["script_path"]
 
     # set baseline
+    dss.text(f"Compile [{dss_file}]")
     set_baseline(dss)
 
     # create a sensitivity object

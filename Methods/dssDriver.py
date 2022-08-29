@@ -115,19 +115,23 @@ def dssDriver(iterName, dss, outDSS, initParams, outES=None):
     dfpjk = pd.DataFrame(pjk, index=np.asarray(lines), columns=dfDemand.columns)
     dfqjk = pd.DataFrame(qjk, index=np.asarray(lines), columns=dfDemand.columns)
 
-    # reactive power correction
-    Q_obj = reactiveCorrection(dss, output_dir, iterName)
-    Pjklim, Sjklim = Q_obj.compute_correction(dfVp, nodeBaseVoltage, nodeLineNames, dfpjk, dfqjk)
-
+    sjkFile = pathlib.Path(output_dir).joinpath('sjk_lim.pkl')
     if outES is not None:
         cost_wednesday = np.expand_dims(outES['costWednesday'], axis=1)
         losses_cost = cost_wednesday.T @ ckt_losses
         outDSS['losses_cost'] = losses_cost
+        Sjklim = pd.read_pickle(str(sjkFile))
+        outDSS['limPjks'] = Sjklim
+    else:
+        # reactive power correction
+        Q_obj = reactiveCorrection(dss, output_dir, iterName)
+        Pjklim, Sjklim = Q_obj.compute_correction(dfVp, nodeBaseVoltage, nodeLineNames, dfpjk, dfqjk)
+        outDSS['limPjks'] = Sjklim
+        Sjklim.to_pickle(str(sjkFile))
 
     outDSS['initPower'] = dfP
     outDSS['initVolts'] = dfV
     outDSS['initPjks'] = dfPjks
-    outDSS['limPjks'] = Pjklim
     outDSS['nodeBaseVolts'] = nodeBaseVoltage
 
     if initParams["plot"] == "True":
@@ -136,7 +140,7 @@ def dssDriver(iterName, dss, outDSS, initParams, outES=None):
         plot_obj.plot_Dispatch(dfP)
         # plot Line Limits
         Linfo = load_lineLimits(scriptPath, case)
-        plot_obj.plot_Pjk(dfPjks, Linfo, Pjklim, Sjklim)
+        plot_obj.plot_Pjk(dfPjks, Linfo, Sjklim, Sjklim)
         # plot voltage constraints
         plot_obj.plot_voltage(nodeBaseVoltage, dfV, dfDemand.any(axis=1))
         # plot demand

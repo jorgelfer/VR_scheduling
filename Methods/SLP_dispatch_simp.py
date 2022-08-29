@@ -12,17 +12,29 @@ from scipy import sparse
 
 class SLP_dispatch:
 
-    def __init__(self, Gmax, batt, costs, flags, sen, outDSS, initParams):
+    def __init__(self, Gmax, batt, costs, flags, sen, outDSS, initParams, outES):
 
         self.Gmax = Gmax            # Max generation
         self.cgn = costs["cgn"]              # Cost of generation
         self.clin = costs["clin"]            # "cost of lines"
         self.cctap = costs["cctap"]            # "cost of lines"
         self.cdr = costs["cdr"]     # cost of demand response
-        self.Pjk_lim = outDSS["limPjks"]      # thermal limit of the line
         self.v_base = outDSS["v_base"]        # Base voltage of the system in volts
-        self.vmin = float(initParams["vmin"]) * 1000     # voltage mi
-        self.vmax = float(initParams["vmax"]) * 1000     # voltage max
+
+        # themal limits
+        try:
+            self.Pjk_lim = outES["limPjks"]
+        except:
+            self.Pjk_lim = outDSS["limPjks"]
+
+        # voltage limits
+        try:
+            self.vmin = float(outES["vmin"]) * 1000
+            self.vmax = float(outES["vmax"]) * 1000
+        except:
+            self.vmin = float(initParams["vmin"]) * 1000
+            self.vmax = float(initParams["vmax"]) * 1000
+
         self.storage = flags["storage"]
         self.DR = flags["DR"]
         self.reg = flags["reg"]
@@ -45,9 +57,10 @@ class SLP_dispatch:
         self.dvdp = pd.DataFrame(dvdp, index=sen["dvdp"].index, columns=sen["dvdp"].columns)
 
         # regulator sensitivities
-        self.dvdr = sen["dvdr"]
-        self.dpjkdr = sen["dpjkdr"]
-        self.numRegs = len(sen["dvdr"].columns)
+        self.dvdr = sen["dvdrR"]
+        self.dpjkdrR = sen["dpjkdrR"]
+        self.dpjkdrL = sen["dpjkdrL"]
+        self.numRegs = len(sen["dvdrR"].columns)
 
         # battery attributes
         self.numBatteries = batt['numBatteries']
@@ -56,7 +69,6 @@ class SLP_dispatch:
         self.batChargingLimits = batt['BatChargingLimits']
         self.batEfficiencies = batt['BatEfficiencies']
         self.batInitEnergy = batt['BatInitEnergy']
-        self.batPenalty = batt['BatPenalty']
         self.ccharbat = batt['ccharbat']
         self.ccapacity = batt['ccapacity']
 
@@ -64,15 +76,16 @@ class SLP_dispatch:
     def PTDF_SLP_OPF(self):
         # preprocess
         demandProfile = self.outDSS["dfDemand"]
-        demandProfilei = demandProfile.any(axis=1)
         Pjk_0 = self.outDSS["initPjks"]
         v_0 = self.outDSS["initVolts"]
         Pg_0 = self.outDSS["initPower"]
         PDR_0 = self.outDSS["initDR"]
+        Pchar_0 = self.outDSS["initPchar"]
+        Pdis_0 = self.outDSS["initPdis"]
+        R_0 = self.outDSS["initR"]
 
         # define number of points
         self.pointsInTime = np.size(demandProfile, 1)
-        self.demandProfilei = demandProfile.any(axis=1)
 
         # build equality constraints matrices
         Aeq, beq = self.__buildEquality(demandProfile)
@@ -84,13 +97,13 @@ class SLP_dispatch:
         # add storage portion
         if self.storage:
             # modify A, Aeq
-            Aeq, A = self.__addStorage_A(Aeq, A)
+            Aeq, A, b = self.__addStorage_A(Aeq, A, b, Pchar_0, Pdis_0)
             # modify beq, lb, ub, f
             beq, ub, lb, f = self.__addStorage_rest(beq, ub, lb, f)
         # add portion of regulators to matrices
         if self.reg:
             # modify A, Aeq
-            Aeq, A = self.__addReg(Aeq, A)
+            Aeq, A, b = self.__addReg(Aeq, A, b, R_0)
             # modify beq, lb, ub, f
             ub, lb, f = self.__addReg_rest(ub, lb, f)
         # compute linear program optimization
@@ -143,7 +156,7 @@ class SLP_dispatch:
         # concatenate both contributions
         A = sparse.vstack((A_flows, A_v))
         b = np.concatenate((b_flows, b_v), axis=0)
-        return A, b
+        return A_v, b_v
 
     def __buildSensitivityInequality(self, dxdp, x_0, x_lb, x_ub):
         """for both voltage and flows inequalities the procedure is very similar
@@ -207,7 +220,7 @@ class SLP_dispatch:
             balanceNode[phi - 1, n] = 1
         return balanceNode
 
-    def __addReg(self, Aeq, A):
+    def __addReg(self, Aeq, A, b, R_0):
         """ add reg portion for A's"""
         # Aeq matrix to this moment
         # columns: Pnt1,Pntf-Pdrt1,Pdrtf-PscBt1,PscBtf-PsdBt1,PsdBtf-EBt1,EBtf
@@ -218,16 +231,16 @@ class SLP_dispatch:
 
         # Inequalities
         # build Ain:
-        Ain = self.__regAin(A)
-        return Aeq_new, Ain
+        Ain, bine = self.__regAin(A, b, R_0)
+        return Aeq_new, Ain, bine
 
-    def __addStorage_A(self, Aeq, A):
+    def __addStorage_A(self, Aeq, A, b, Pchar_0, Pdis_0):
         """Compute the battery portion for A's"""
         # Aeq:
         # columns: Pnt1,Pntf
         # rows:    (n+l)*PointsInTime + numBatteries*(PointsInTime+2)
         if self.DR:
-            auxZero = np.zeros((self.numBatteries*(self.pointsInTime + 2), 2 * self.n * self.pointsInTime))
+            auxZero = np.zeros((self.numBatteries * (self.pointsInTime + 2), 2 * self.n * self.pointsInTime))
             Aeq1 = sparse.vstack((Aeq,
                                   sparse.csr_matrix(auxZero)))  # Adding part of batteries eff. equations
         else:
@@ -276,8 +289,8 @@ class SLP_dispatch:
         # Inequalities
         ############
         # build Ain:
-        Ain = self.__storageAin(A)
-        return Aeq, Ain
+        Ain, bine = self.__storageAin(A, b, Pchar_0, Pdis_0)
+        return Aeq, Ain, bine
 
     def __addReg_rest(self, ub, lb, f):
         """add storage portion to beq, lb, ub, f"""
@@ -321,57 +334,73 @@ class SLP_dispatch:
 
         return beq, ub.T, lb.T, f
 
-    def __regAin(self, A1):
+    def __regAin(self, A1, b, R_0):
         """include reg in inequality constraints"""
+        # reshape init tap
+        self.R_0 = np.reshape(R_0.values.T, (1, np.size(R_0)), order="F")
         # for the voltage
-        A2_v = self.__regSensitivityA(self.dvdr)
+        A2_v, b2_v = self.__regSensitivityA(self.dvdr, self.dvdr)
         # for the flows
-        A2_flows = self.__regSensitivityA(self.dpjkdr)
+        A2_flows, b2_flows = self.__regSensitivityA(self.dpjkdrL, self.dpjkdrR)
 
         # contatenate both contributions
         A2 = sparse.vstack((A2_flows, A2_v))
+        b2 = np.concatenate((b2_flows, b2_v), axis=0)
 
         # finally concatenate with the original matrix
-        Ain = sparse.hstack((A1, A2))
-        return Ain
+        Ain = sparse.hstack((A1, A2_v))
+        b += b2_v
+        return Ain, b
 
-    def __storageAin(self, A1):
+    def __storageAin(self, A1, b, Pchar_0, Pdis_0):
         """include storage in inequality constraints"""
         # preprocess
         row, _ = np.where(self.batIncidence == 1)  # get nodes with storage
-
+        # reshape init charge and discharge
+        self.Pchar_0 = np.reshape(Pchar_0.values.T, (1, np.size(Pchar_0)), order="F")
+        self.Pdis_0 = np.reshape(Pdis_0.values.T, (1, np.size(Pdis_0)), order="F")
         # for the voltage
-        A2_v = self.__storageSensitivityA(row, self.dvdp)
+        A2_v, b2_v = self.__storageSensitivityA(row, self.dvdp)
         # for the flows
-        A2_flows = self.__storageSensitivityA(row, self.PTDF)
+        A2_flows, b2_flows = self.__storageSensitivityA(row, self.PTDF)
 
         # contatenate both contributions
         A2 = sparse.vstack((A2_flows, A2_v))
+        b2 = np.concatenate((b2_flows, b2_v), axis=0)
 
         # finally concatenate with the original matrix
-        Ain = sparse.hstack((A1, A2))
-        return Ain
+        Ain = sparse.hstack((A1, A2_v))
+        b += b2_v
 
-    def __regSensitivityA(self, dxdr):
-        dxdr = dxdr.values
+        return Ain, b
+
+    def __regSensitivityA(self, dxdrL, dxdrR):
+        dxdrL = dxdrL.values
+        dxdrR = dxdrR.values
         # define A
-        A2 = np.block([[dxdr, -dxdr],     # -dv/dp * (-tapn, tapp) 
-                       [-dxdr, dxdr]])     # dv/dp * (-tapn, tapp) 
+        A2 = np.block([[dxdrL, -dxdrR],     # -dv/dp * (-tapn, tapp) 
+                       [-dxdrL, dxdrR]])     # dv/dp * (-tapn, tapp) 
         A2 = sparse.kron(sparse.csr_matrix(A2), sparse.csr_matrix(np.eye(self.pointsInTime)))
 
-        return A2
+        # define b
+        dxdr_kron = np.kron(dxdrR, np.eye(self.pointsInTime))
+        aux_dxdr = dxdr_kron @ self.R_0.T
+        b2 = np.concatenate((-aux_dxdr,
+                            aux_dxdr), axis=0)
+
+        return A2, b2
 
     def __storageSensitivityA(self, row, dxdp):
         dxdp = dxdp.values
 
         # portion related to lower bound
-        A_b1_aux = np.concatenate((dxdp[:, row], - 1./(self.batPenalty)*dxdp[:, row]), 1)
+        A_b1_aux = np.concatenate((dxdp[:, row], -dxdp[:, row]), 1)
         A_b1_aux1 = sparse.kron(A_b1_aux, sparse.csr_matrix(np.eye(self.pointsInTime)))
         A_b1 = sparse.hstack((A_b1_aux1,  # -dx/dp * (-Psd+Psc)
                              sparse.csr_matrix(np.zeros((dxdp.shape[0]*self.pointsInTime, self.numBatteries*(self.pointsInTime + 1)) )) )) # -dx/dp *(0*E)
 
         # portion related to upper bound
-        A_b2_aux = np.concatenate((-dxdp[:, row], 1./(self.batPenalty)*dxdp[:, row]), 1)
+        A_b2_aux = np.concatenate((-dxdp[:, row], dxdp[:, row]), 1)
         A_b2_aux1 = sparse.kron(A_b2_aux, sparse.csr_matrix(np.eye(self.pointsInTime)))
         A_b2 = sparse.hstack((A_b2_aux1,  # dx/dp *(-Psd+Psc)
                              sparse.csr_matrix(np.zeros((dxdp.shape[0]*self.pointsInTime, self.numBatteries*(self.pointsInTime + 1))))))  # -dx/dp *(0*E)
@@ -379,7 +408,13 @@ class SLP_dispatch:
         # concatenate both blocks
         A2 = sparse.vstack((A_b1, A_b2))
 
-        return A2
+        # modify b
+        dxdp_kron = np.kron(dxdp[:, row], np.eye(self.pointsInTime))
+        aux_dxdp = dxdp_kron @ (-self.Pchar_0 + self.Pdis_0).T
+        b2 = np.concatenate((-aux_dxdp,
+                            aux_dxdp), axis=0)
+
+        return A2, b2
 
     def __storageAeq2(self):
         """auxiliary matrices to include storage in equality constraints"""

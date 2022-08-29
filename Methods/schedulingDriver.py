@@ -10,6 +10,7 @@ import pathlib
 import matplotlib.pyplot as plt
 plt.rcParams.update({'font.size': 12})
 from Methods.SLP_dispatch_simp import SLP_dispatch
+from Methods.SLP_dispatch_simp2 import SVR_dispatch
 from Methods.LP_dispatch import LP_dispatch
 from Methods.plotting import plottingDispatch
 from Methods.loadHelper import loadHelper
@@ -26,6 +27,7 @@ def create_battery(PTDF, pointsInTime, sbus, batSize):
     BatIncidence[PTDF.columns == sbus + '.2', 1] = 1
     BatIncidence[PTDF.columns == sbus + '.3', 2] = 1
     batt['BatIncidence'] = BatIncidence
+    nodes = np.where(np.any(BatIncidence, 1))[0]
     BatSizes = batSize * np.ones((1, numBatteries))
     batt['BatSizes'] = BatSizes
     BatChargingLimits = (24 / pointsInTime) * 100 * np.ones((1, numBatteries))
@@ -33,16 +35,16 @@ def create_battery(PTDF, pointsInTime, sbus, batSize):
     BatEfficiencies = 0.97 * np.ones((1, numBatteries))
     batt['BatEfficiencies'] = BatEfficiencies
     np.random.seed(2022)  # Set random seed so results are repeatable
-    BatInitEnergy = BatSizes * np.random.uniform(0.5, 0.8, size=(1, numBatteries))
+    BatInitEnergy = BatSizes * 0.4 * np.ones((1, numBatteries))  # np.random.uniform(0.5, 0.8, size=(1, numBatteries))
     batt['BatInitEnergy'] = BatInitEnergy
-    Pbatcost = 0.01
+    Pbatcost = 10 
     batt['Pbatcost'] = Pbatcost
     ccharbat = Pbatcost * np.ones((1, 2 * numBatteries * pointsInTime))
     batt['ccharbat'] = ccharbat
-    ccapacity = Pbatcost * np.ones((1, numBatteries * (pointsInTime + 1)))
+    ccapacity = 0.001 * np.ones((1, numBatteries * (pointsInTime + 1)))
     batt['ccapacity'] = ccapacity
     batt['BatPenalty'] = np.ones((1, numBatteries))
-    return batt
+    return batt, nodes
 
 def create_reg(dxdr):
     """function to define regulator parameters"""
@@ -118,7 +120,7 @@ def create_PVsystems(freq, Gmax, PTDF, gCost, cost_wednesday, pv1bus, pv2bus, pv
     return Gmax, gCost, PVnodes, PVProfile
 
 
-def compute_penaltyFactors(batt, PTDF, source):
+def compute_penaltyFactors(PTDF, source):
     '''function to Compute penalty factors'''
     # compute dPgref
     dPgref = np.min(PTDF[:3])
@@ -130,13 +132,7 @@ def compute_penaltyFactors(batt, PTDF, source):
     Pf[source + '.1'] = 1
     Pf[source + '.2'] = 1
     Pf[source + '.3'] = 1
-    # batt incidence
-    BatIncidence = batt['BatIncidence']
-    # nodes with batt
-    nodes = np.where(np.any(BatIncidence, 1))[0]
-    # assign penalty factors
-    batt['BatPenalty'] = np.asarray([Pf.values[n] for n in nodes])
-    return batt, Pf, nodes
+    return Pf
 
 
 def load_voltageSensitivity(script_path, case):
@@ -152,33 +148,18 @@ def load_voltageSensitivity(script_path, case):
 def load_RegSensitivities(script_path, dssCase):
     '''funtion to load voltage sensitivity'''
     # voltage sensitivity
-    dVdR = pd.read_pickle(pathlib.Path(script_path).joinpath("inputs", dssCase,
-                          "VoltageToRegSensitivity.pkl"))
-    dPjkdR = pd.read_pickle(pathlib.Path(script_path).joinpath("inputs", dssCase,
-                            "FlowsToRegSensitivity.pkl"))
-    return dVdR, dPjkdR
+    dVdtR = pd.read_pickle(pathlib.Path(script_path).joinpath("inputs", dssCase,
+                           "VoltageToRegSensitivity2.pkl"))
+    dVdtL = pd.read_pickle(pathlib.Path(script_path).joinpath("inputs", dssCase,
+                           "VoltageToRegSensitivity2.pkl"))
+    dPjkdtR = pd.read_pickle(pathlib.Path(script_path).joinpath("inputs", dssCase,
+                             "FlowsToRegSensitivity2.pkl"))
+    dPjkdtL = pd.read_pickle(pathlib.Path(script_path).joinpath("inputs", dssCase,
+                             "FlowsToRegSensitivity2.pkl"))
+    return dVdtR, dVdtL, dPjkdtR, dPjkdtL
 
 
-def load_lineLimits(script_path, case, PTDF, pointsInTime, DR, Pij, Pjk_lim):
-    '''function to load line Limits'''
-    compare = Pij > Pjk_lim
-    violatingLines = compare.any(axis=1)
-    # Line Info
-    Linfo_file = pathlib.Path(script_path).joinpath("inputs", case, "LineInfo.pkl")
-    Linfo = pd.read_pickle(Linfo_file)
-    return violatingLines, Linfo
-
-
-def compute_violatingVolts(v_0, v_base, vmin, vmax):
-    # extract violating Lines
-    v_lb = (vmin * 1000) * v_base
-    v_ub = (vmax * 1000) * v_base
-    compare = (v_0 > v_ub) | (v_0 < v_lb)
-    violatingVolts = compare.any(axis=1)
-    return violatingVolts
-
-
-def schedulingDriver(iterName, outDSS, initParams):
+def schedulingDriver(iterName, outDSS, initParams, outES):
     # get init params
     batSize = int(initParams["batSize"])
     pvSize = int(initParams["pvSize"])
@@ -187,24 +168,12 @@ def schedulingDriver(iterName, outDSS, initParams):
     freq = initParams["freq"]
     # extract DSS results
     loadNames = outDSS['loadNames']
-    Pg_0 = outDSS['initPower']
     v_0 = outDSS['initVolts']
     v_base = outDSS['nodeBaseVolts']
-    Pjk_0 = outDSS['initPjks']
-    Pjk_lim = outDSS['limPjks']
-    # debug  #
-    # Lmaxi = 2000 * np.ones((len(Pjk_lim.index), 1))
-    # Lmax = np.kron(Lmaxi, np.ones((1, len(Pjk_lim.columns))))
-    # Lmax = pd.DataFrame(Lmax, index=Pjk_lim.index, columns=Pjk_lim.columns)
-    # outDSS['limPjks'] = Lmax
-    #  #
     demandProfile = outDSS['dfDemand']
     demandProfilei = demandProfile.any(axis=1)
     lnodes = np.where(demandProfilei)[0]
     pointsInTime = v_0.shape[1]
-    # initially there is no DR
-    outDSS["initDR"] = pd.DataFrame(np.zeros(v_0.shape), index=Pg_0.index, columns=Pg_0.columns)
-
     # ####################
     # define flags
     flags = dict()
@@ -243,16 +212,15 @@ def schedulingDriver(iterName, outDSS, initParams):
     v_basei = v_base.to_frame()
     v_base = np.kron(v_basei, np.ones((1, pointsInTime)))
     v_base = pd.DataFrame(v_base, index=v_basei.index, columns=v_0.columns)
-    # violatingVolts = compute_violatingVolts(v_0, v_base, vmin, vmax)
     # load PTDF results
     PTDF = load_PTDF(script_path, case)
     n = len(PTDF.columns)
     m = len(PTDF)
     # Storage
-    batt = create_battery(PTDF, pointsInTime, sbus, batSize)
+    batt, Snodes = create_battery(PTDF, pointsInTime, sbus, batSize)
     # Penalty factors
     if flags["PF"]:
-        batt, pf, Snodes = compute_penaltyFactors(batt, PTDF, source)
+        pf = compute_penaltyFactors(PTDF, source)
     # round the PTDF (required for optimization)
     PTDF = PTDF.round()
     # Line costs
@@ -260,8 +228,6 @@ def schedulingDriver(iterName, outDSS, initParams):
     clin = np.reshape(pijCost.T, (1, pijCost.size), order="F")
     # Load generation costs
     gCost, cost_wednesday, Gmax = load_generationCosts(script_path, n, pointsInTime, freq)
-    # Line limits and info
-    _, Linfo = load_lineLimits(script_path, case, PTDF, pointsInTime, flags["DR"], Pjk_0, Pjk_lim)
     # Demand Response (cost of shedding load)
     np.random.seed(2022)  # Set random seed so results are repeatable
     DRcost = np.random.randint(100, 300, size=(1, n))
@@ -283,11 +249,9 @@ def schedulingDriver(iterName, outDSS, initParams):
     # Overall Generation costs:
     cgn = np.reshape(gCost.T, (1, gCost.size), order="F")
     # regulator costs
-    val = 10
-    unitCost = val * np.array([[1, .3, .3, .3, .3, .3, .3]])
+    unitCost = 0.1 * np.array([[1, .3, .3, .5, .3, .5, .5]])
     cctap = np.kron(unitCost, np.ones((1, pointsInTime)))
-    val = 10
-    unitCost = val * np.array([[1, .3, .3, .3, .3, .3, .3]])
+    unitCost = 0.01 * np.array([[1, 1, 1, 1, 1, 1, 1]])
     ccap = np.kron(unitCost, np.ones((1, pointsInTime + 1)))
     # create dict to store costs
     costs = dict()
@@ -299,29 +263,90 @@ def schedulingDriver(iterName, outDSS, initParams):
     # load voltage base at each node
     dvdp = load_voltageSensitivity(script_path, case)
     # load regulator sensitivities
-    dvdr, dpjkdr = load_RegSensitivities(script_path, case)
+    dvdrR, dvdrL, dpjkdrR, dpjkdrL = load_RegSensitivities(script_path, case)
     # create a dict to store sensitivities
     sen = dict()
     sen["pf"] = pf
     sen["PTDF"] = PTDF
     sen["dvdp"] = dvdp
-    sen["dvdr"] = dvdr
-    sen["dpjkdr"] = dpjkdr
+    sen["dvdrR"] = dvdrR
+    sen["dvdrL"] = dvdrL
+    sen["dpjkdrR"] = dpjkdrR
+    sen["dpjkdrL"] = dpjkdrL
 
     # only want to control voltage at nodes with load
     outDSS["initVolts"] = v_0[demandProfilei.values]
     outDSS["v_base"] = v_base[demandProfilei.values]  # store the temporally expanded vBase
     sen["dvdp"] = dvdp[demandProfilei.values]
-    sen["dvdr"] = dvdr[demandProfilei.values]
+    sen["dvdrR"] = dvdrR[demandProfilei.values]
+    sen["dvdrL"] = dvdrL[demandProfilei.values]
+
+    # check initial solution
+    # Pg
+    Pg_0 = outDSS['initPower']
+    # DR
+    outDSS["initDR"] = pd.DataFrame(np.zeros(v_0.shape), index=Pg_0.index, columns=Pg_0.columns)
+    # storage
+    # Pdis
+    outDSS["initPdis"] = pd.DataFrame(np.zeros((batt["numBatteries"], pointsInTime)),
+                                      index=PTDF.columns[Snodes],
+                                      columns=v_0.columns)
+    # Pchar
+    outDSS["initPchar"] = pd.DataFrame(np.zeros((batt["numBatteries"], pointsInTime)),
+                                       index=PTDF.columns[Snodes],
+                                       columns=v_0.columns)
+    # Tap
+    outDSS["initR"] = pd.DataFrame(np.zeros((len(dvdrR.columns), pointsInTime)),
+                                   index=dvdrR.columns,
+                                   columns=v_0.columns)
+    # init voltage limits
+    vmin = float(initParams["vmin"])
+    vmax = float(initParams["vmax"])
+    Pjk_lim = outDSS["limPjks"]
+
+    if outES is not None:
+        # decrease the voltage limits a little bit
+        if outDSS["violatingVolts"]:
+            vmin = 1.001 * outES["vmin"]
+            vmax = 0.999 * outES["vmax"]
+            outES["vmin"] = vmin
+            outES["vmax"] = vmax
+
+        # decrease line limits a little bit
+        if outDSS["violatingLines"]:
+            Pjk_lim = 0.999 * outES["limPjks"]
+            outES["limPjks"] = Pjk_lim
+
+        # Pg
+        if flags["PV"]:
+            Pg_pv = outES['Gen']
+            Pg_0.loc[Pg_pv.index, :] += Pg_pv
+            outDSS['initPower'] = Pg_0
+        # Pdr
+        if flags["DR"]:
+            Pdr_0 = pd.DataFrame(np.zeros(Pg_0.shape), index=Pg_0.index, columns=Pg_0.columns)
+            Pdr_ES = outES['DR_node']
+            Pdr_0.loc[Pdr_ES.index, :] += Pdr_ES
+            outDSS["initDR"] = Pdr_0
+        # storage
+        if flags["storage"]:
+            # Pdis
+            outDSS["initPdis"] = outES['Pdis']
+            # Pchar
+            outDSS["initPchar"] = outES['Pchar']
+        # Tap
+        if flags["reg"]:
+            outDSS["initR"] = outES['R']
 
     # call the dispatch method
-    if initParams["dispatchType"] == 'SLP':
+    if False:
         # create an instance of the dispatch class
-        dispatch_obj = SLP_dispatch(Gmax, batt, costs, flags, sen, outDSS, initParams)
+        dispatch_obj = SVR_dispatch(Gmax, batt, costs, flags, sen, outDSS, initParams, outES)
         x, m, LMP = dispatch_obj.PTDF_SLP_OPF()
     else:
-        dispatch_obj = LP_dispatch(Gmax, batt, costs, flags, sen, outDSS, initParams)
-        x, m, LMP, Ain = dispatch_obj.PTDF_LP_OPF()
+        # create an instance of the dispatch class
+        dispatch_obj = SLP_dispatch(Gmax, batt, costs, flags, sen, outDSS, initParams, outES)
+        x, m, LMP = dispatch_obj.PTDF_SLP_OPF()
     # Create plot object
     plot_obj = plottingDispatch(iterName, pointsInTime, initParams, PTDF=PTDF)
     # extract dispatch results
@@ -339,19 +364,23 @@ def schedulingDriver(iterName, outDSS, initParams):
     # OUTPUT
     #
     outES = dict()
+    outES["vmin"] = vmin
+    outES["vmax"] = vmax
+    outES["limPjks"] = Pjk_lim
     outES['costWednesday'] = cost_wednesday
     outES['J'] = m.objVal
     outES['DRcost'] = costPdr
     outES['LMP'] = pd.DataFrame(LMP[lnodes, :], np.asarray(PTDF.columns[lnodes]), v_0.columns)
 
     if flags["reg"]:
-        outES['R'] = pd.DataFrame(Tp - Tn, index=dvdr.columns, columns=v_0.columns)
+        outES['R'] = pd.DataFrame(Tp - Tn, index=dvdrR.columns, columns=v_0.columns)
     else:
         outES['R'] = None
 
     if flags["DR"]:
         lnames = [loadNames.loc[n] for n in PTDF.columns[lnodes]]
         outES['DR'] = pd.DataFrame(Pdr[lnodes, :], index=np.asarray(lnames), columns=v_0.columns)
+        outES['DR_node'] = pd.DataFrame(Pdr[lnodes, :], index=PTDF.columns[lnodes], columns=v_0.columns)
     else:
         outES['DR'] = None
 

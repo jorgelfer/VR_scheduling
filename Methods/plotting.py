@@ -101,8 +101,8 @@ class plottingDispatch:
         cont = 0
         for ni, na in zip(nil, namel):
             # if True:
-            # if np.any(Pij.values[cont:cont + ni, :] > lmax.values[cont:cont + ni, :]):
-            if na == "Line.l115":
+            if np.any(Pij.values[cont:cont + ni, :] > lmax.values[cont:cont + ni, :]) or na == "Line.l115":
+            # if na == "Line.l115":
                 # if na == "Line.650632":
                 plt.clf()
                 fig, ax = plt.subplots(figsize=(h, w))
@@ -134,24 +134,31 @@ class plottingDispatch:
             cont += ni
             plt.close('all')
 
+    def __balanceNodes(self, demandProfile):
+        """Method designed to asign phase"""
+        balanceNode = np.zeros((3, len(demandProfile.index)))
+        for n, node in enumerate(demandProfile.index):
+            phi = int(node.split('.')[1])
+            balanceNode[phi - 1, n] = 1
+        return balanceNode
+
     def plot_Demand(self, DemandProfile):
 
         # ####################
-        # ##   Demand  ## 
+        # ##   Demand  ##
         # ####################
-        totalDemand =  DemandProfile.sum(axis=0).to_frame()
-        
-        # index = np.where(DemandProfilei) 
+        balanceNode = self.__balanceNodes(DemandProfile)
+        balanceDemand = balanceNode @ DemandProfile.values
+        balanceDemand = pd.DataFrame(balanceDemand, columns=DemandProfile.columns)
+
+        # index = np.where(DemandProfilei)
         plt.clf()
-        fig, ax = plt.subplots(figsize=(h,w))
-        
-        totalDemand.plot()
-        
+        fig, ax = plt.subplots(figsize=(h, w))
+        balanceDemand.T.plot()
         if self.title:
             ax.set_title('Demand profile')
             plt.ylabel('Power (kW)')
             plt.xlabel('Time (hrs)')
-        
         fig.tight_layout()
         output_img = pathlib.Path(self.output_dir).joinpath(f"Demand_profile_{self.timestamp}"+ ext)
         plt.savefig(output_img)
@@ -160,11 +167,11 @@ class plottingDispatch:
     def plot_reg(self, R):
 
         #######################
-        # Power Dispatch  #
+        # Reg Dispatch  #
         #######################
         plt.clf()
         fig, ax = plt.subplots(figsize=(h, w))
-        R.round().T.plot(drawstyle="steps-post", linewidth=2, legend=False)  # use any to plot dispatched nodes
+        R.T.plot(drawstyle="steps-post", linewidth=2, legend=False)  # use any to plot dispatched nodes
         if self.title:
             ax.set_title('Regulators taps [-16, 16]', fontsize=15)
             plt.ylabel('tap', fontsize=12)
@@ -179,10 +186,29 @@ class plottingDispatch:
         output_img = pathlib.Path(self.output_dir).joinpath(name + ext)
         plt.savefig(output_img)
         plt.close('all')
+        
+        # round
+        plt.clf()
+        fig, ax = plt.subplots(figsize=(h, w))
+        R.round().T.plot(drawstyle="steps-post", linewidth=2, legend=False)  # use any to plot dispatched nodes
+        if self.title:
+            ax.set_title('Regulators taps [-16, 16]', fontsize=15)
+            plt.ylabel('tap', fontsize=12)
+            plt.xlabel('Time (hrs)', fontsize=12)
+        fig.tight_layout()
 
-        # save as pkl as well
-        output_pkl = pathlib.Path(output_dirReg).joinpath(name + ".pkl")
-        R.to_pickle(output_pkl)
+        output_dirReg = pathlib.Path(self.output_dir).joinpath("Reg")
+        if not os.path.isdir(output_dirReg):
+            os.mkdir(output_dirReg)
+
+        name = f"Reg_tap_round_{self.niter}_{self.timestamp}"
+        output_img = pathlib.Path(self.output_dir).joinpath(name + ext)
+        plt.savefig(output_img)
+        plt.close('all')
+
+        # # save as pkl as well
+        # output_pkl = pathlib.Path(output_dirReg).joinpath(name + ".pkl")
+        # R.to_pickle(output_pkl)
 
     def plot_Dispatch(self, Pg):
 
@@ -221,9 +247,9 @@ class plottingDispatch:
         plt.clf()
         fig, ax = plt.subplots(figsize=(h,w))
         Pdr = Pdr[Pdr.any(axis=1)] # use any to plot dispatched nodes
-        Pdr.T.plot()
         
         if Pdr.shape[0] != 0:
+            Pdr.T.plot()
             if self.title:
                 ax.set_title(f'Demand Response - total {round(np.sum(Pdr),3)}', fontsize=15)
                 plt.ylabel('Power (kW)', fontsize=15)

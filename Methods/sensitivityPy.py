@@ -226,7 +226,7 @@ class sensitivityPy:
                 # debug
                 readprevtap = self.dss.transformers_read_tap()  # debug
                 # make the tap modification
-                newtap = 1.0 + 0.00625 * round(R.loc[reg, self.time])
+                newtap = 1.0 + 0.00625 * round(R.loc[reg, self.time])  # round()
                 self.dss.text(f"Transformer.{reg}.Taps=[1.0, {newtap}]")
                 # debug
                 readnewtap = self.dss.transformers_read_tap()  # debug
