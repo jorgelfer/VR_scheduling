@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 h = 6 
 w = 4 
-ext = '.pdf'
+ext = '.png'
 
 
 class plottingDispatch:

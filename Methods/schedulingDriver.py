@@ -249,7 +249,7 @@ def schedulingDriver(iterName, outDSS, initParams, outES):
     # Overall Generation costs:
     cgn = np.reshape(gCost.T, (1, gCost.size), order="F")
     # regulator costs
-    unitCost = 0.1 * np.array([[1, .3, .3, .5, .3, .5, .5]])
+    unitCost = 0.1 * np.array([[1, .3, .3, .3, .3, .3, .3]])
     cctap = np.kron(unitCost, np.ones((1, pointsInTime)))
     unitCost = 0.01 * np.array([[1, 1, 1, 1, 1, 1, 1]])
     ccap = np.kron(unitCost, np.ones((1, pointsInTime + 1)))
@@ -339,7 +339,7 @@ def schedulingDriver(iterName, outDSS, initParams, outES):
             outDSS["initR"] = outES['R']
 
     # call the dispatch method
-    if False:
+    if flags["reg"]:
         # create an instance of the dispatch class
         dispatch_obj = SVR_dispatch(Gmax, batt, costs, flags, sen, outDSS, initParams, outES)
         x, m, LMP = dispatch_obj.PTDF_SLP_OPF()

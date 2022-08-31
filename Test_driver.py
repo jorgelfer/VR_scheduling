@@ -35,7 +35,7 @@ t = time.localtime()
 timestamp = time.strftime('%b-%d-%Y_%H%M', t)
 # create directory to store results
 today = time.strftime('%b-%d-%Y', t)
-directory = "Results_simple_" + today
+directory = "Results_simpleNeg_" + today
 output_dir12 = pathlib.Path(script_path).joinpath("outputs", directory)
 
 if not os.path.isdir(output_dir12):
@@ -48,7 +48,7 @@ else:
 regFlags = ["False","True"]
 loadMults = [13]  # 1 for default loadshape, 11 for real.
 batSizes = [0]
-pvSizes = [200]
+pvSizes = [0]
 
 DRcost = np.zeros((len(regFlags), len(loadMults), len(batSizes), len(pvSizes)))
 J = np.zeros((len(regFlags), len(loadMults), len(batSizes), len(pvSizes)))
